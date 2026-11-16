@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rintisa</title>
+<meta name="description" content="Rintisa – platform kerja mikro dengan asesmen AI adaptif dan AI Smart Matching.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  /* Tema Rintisa: Navy (kepercayaan) + Emerald (validasi/lulus) + Electric Blue (skor menengah) */
+  tailwind.config = {
+    theme: { extend: {
+      colors: { navy: { 50:'#EEF3FA',100:'#D9E3F2',200:'#B3C6E4',300:'#84A2CF',400:'#5479B3',500:'#335A96',600:'#24467A',700:'#1B3963',800:'#142C4F',900:'#0F2240',950:'#08152A' } },
+      fontFamily: { sans:['"Plus Jakarta Sans"','Inter','system-ui','sans-serif'], mono:['"JetBrains Mono"','ui-monospace','monospace'] },
+      boxShadow: {
+        soft:'0 1px 2px rgba(15,34,64,.05), 0 6px 20px -4px rgba(15,34,64,.08)',
+        lift:'0 2px 4px rgba(15,34,64,.06), 0 18px 40px -12px rgba(15,34,64,.24)'
+      }
+    } }
+  };
+</script>
+<style>
+  html{scroll-behavior:smooth}
+  body{background:#F7F9FC}
+  .dotgrid{background-image:radial-gradient(rgba(15,34,64,.09) 1px,transparent 1px);background-size:22px 22px}
+  .dotgrid-dark{background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px}
+  .score-ring{--v:80;--c:#059669;background:conic-gradient(var(--c) calc(var(--v)*1%),#E6EBF2 0);border-radius:9999px;display:grid;place-items:center}
+  .score-ring>span{background:#fff;border-radius:9999px;display:grid;place-items:center}
+  .fade-up{animation:fadeUp .4s ease-out both}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .shimmer{background:linear-gradient(90deg,#EDF1F6 0%,#F7F9FC 50%,#EDF1F6 100%);background-size:200% 100%;animation:sh 1.2s linear infinite}
+  @keyframes sh{to{background-position:-200% 0}}
+  .caret::after{content:"▍";animation:blink 1s steps(2) infinite;color:#34D399}
+  @keyframes blink{50%{opacity:0}}
+  .json-key{color:#7DD3FC}.json-str{color:#86EFAC}.json-num{color:#FCD34D}.json-bool{color:#F9A8D4}
+  kbd{font-family:"JetBrains Mono",monospace;font-size:12px;background:#fff;border:1px solid #CBD5E1;border-bottom-width:2px;border-radius:6px;padding:1px 6px;color:#0F2240}
+  details>summary::-webkit-details-marker{display:none}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body class="font-sans text-slate-700 antialiased">
+<header id="nav" class="sticky top-0 z-40"></header>
+<main id="app"></main>
+<div id="modal"></div>
+<div id="toast" class="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex justify-center px-4"></div>
+
+<script>
+/* =====================================================================
+   RINTISA – Prototipe MVP v2
+   Satu file: Landing Page · Asesmen AI Adaptif · Dashboard AI Smart Matching
+   Semua proses "AI" disimulasikan di frontend agar bisa didemokan offline.
+   Tanda [PRODUKSI] menunjukkan bagian yang pindah ke backend di versi nyata.
+   ===================================================================== */
+
+/* ---------- 1. Utilitas ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rp = n => 'Rp ' + Math.round(n).toLocaleString('id-ID');
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const has = (text, kw) => new RegExp('(^|[^a-z0-9])' + reEsc(kw) + '([^a-z0-9]|$)', 'i').test(text);
+const first = n => String(n).trim().split(/\s+/)[0] || '';
+const initials = n => String(n).trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+const mmss = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+const fmtDate = d => new Date(d).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' });
+const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const T = {}; // penampung timer
+
+/* ---------- 2. Ikon SVG bawaan (tanpa gambar eksternal) ---------- */
+const ICONS = {
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  arrowR:'<path d="M5 12h14M12 5l7 7-7 7"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  shieldCheck:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  sparkles:'<path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  users:'<circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 12 0v1"/><path d="M16 4a4 4 0 0 1 0 8M22 21v-1a6 6 0 0 0-4-5.6"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  wallet:'<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M16 15h2"/>',
+  chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  code:'<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
+  palette:'<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A5.7 5.7 0 0 0 22 9.7C22 5.4 17.5 2 12 2z"/>',
+  video:'<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/>',
+  pen:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  table:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  megaphone:'<path d="M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M17 8a5 5 0 0 1 0 8"/>',
+  alert:'<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+  trend:'<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  layers:'<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+  clipboard:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/>',
+  refresh:'<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
+  braces:'<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/>',
+  pin:'<path d="M12 22s7-6.3 7-12a7 7 0 0 0-14 0c0 5.7 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>'
+};
+const ic = (n, cls = 'h-5 w-5') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+const LOGO = cls => `<svg class="${cls}" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0F2240"/><path d="M10 23V9h6.5a4.5 4.5 0 0 1 0 9H10" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m16 18 5.5 5" stroke="#10B981" stroke-width="2.6" stroke-linecap="round"/><circle cx="24" cy="9" r="2.3" fill="#10B981"/></svg>`;
+
+/* ---------- 3. Gaya komponen ---------- */
+const B = 'inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-40';
+const VAR = {
+  pri: ' bg-navy-900 text-white shadow-sm hover:bg-navy-800',
+  acc: ' bg-emerald-600 text-white shadow-sm hover:bg-emerald-700',
+  out: ' border border-slate-300 bg-white text-navy-900 hover:border-navy-300 hover:bg-slate-50',
+  ghost: ' text-navy-900 hover:bg-slate-100',
+  glass: ' bg-white/10 text-white ring-1 ring-white/20 hover:bg-white/20'
+};
+const SIZE = { sm:' px-3.5 py-2 text-sm', md:' px-5 py-2.5 text-sm', lg:' px-6 py-3 text-base' };
+const btn = (v = 'pri', s = 'md') => B + VAR[v] + SIZE[s];
+const INP = 'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm transition focus:border-navy-500 focus:outline-none focus:ring-4 focus:ring-navy-100';
+const CARD = 'rounded-2xl border border-slate-200 bg-white shadow-soft';
+const AV = ['bg-navy-100 text-navy-800','bg-emerald-100 text-emerald-800','bg-sky-100 text-sky-800','bg-amber-100 text-amber-800','bg-violet-100 text-violet-800','bg-rose-100 text-rose-800'];
+
+/* ---------- 4. Data domain ---------- */
+const TEST_LEN = 5, QTIME = 60, PASS = 60, LS = 'rintisa.v2.you';
+const DIFF = { 1:'Mudah', 2:'Sedang', 3:'Sulit' };
+const CLAIMS = ['Belum pernah dibayar', '1–3 proyek', 'Lebih dari 3 proyek'];
+
+// Jalur keahlian: kata kunci untuk deteksi + daftar kompetensi yang diuji
+const TRACKS = {
+  frontend:{ name:'Frontend Developer', icon:'code', comps:['Dasar React','State Management','Async & API','Performa','Aksesibilitas'],
+    kw:['frontend','front-end','front end','react','web','website','javascript','html','css','tailwind','next.js','vue','web developer','landing page','programmer'] },
+  design:{ name:'Desain Grafis', icon:'palette', comps:['Komposisi','Tipografi','Warna','Brief Klien','File Produksi'],
+    kw:['desain','design','desainer','designer','grafis','graphic','canva','logo','poster','banner','figma','illustrator','photoshop','branding'] },
+  video:{ name:'Video Editor', icon:'video', comps:['Editing','Audio','Format Platform','Storytelling','Etika & Lisensi'],
+    kw:['video','capcut','premiere','editor video','video editor','editing','reels','tiktok','youtube','motion'] },
+  writing:{ name:'Penulis Konten', icon:'pen', comps:['Tata Bahasa','Copywriting','SEO Dasar','Riset','Struktur'],
+    kw:['penulis','writer','menulis','copywriting','copywriter','artikel','blog','caption','seo','content writer'] },
+  data:{ name:'Data & Admin', icon:'table', comps:['Spreadsheet','Kebersihan Data','Privasi','Pelaporan'],
+    kw:['data','excel','spreadsheet','sheets','admin','input','data entry','entri','administrasi'] },
+  socmed:{ name:'Admin Media Sosial', icon:'megaphone', comps:['Strategi Konten','Analitik','Komunitas','Penjadwalan'],
+    kw:['sosmed','media sosial','social media','instagram','medsos','admin medsos','smm','content planner'] }
+};
+const FEE = { frontend:[300000,1500000], design:[75000,400000], video:[100000,500000], writing:[50000,300000], data:[50000,250000], socmed:[150000,600000] };
+const DEFAULT_TAGS = { frontend:['Landing Page','Responsif'], design:['Poster','Canva'], video:['Reels','CapCut'], writing:['Copywriting'], data:['Excel','Input Data'], socmed:['Instagram','Kalender Konten'] };
+
+// Kosakata kemampuan bersama: dipakai profil talenta DAN analisis kebutuhan klien
+const TAGS = {
+  'React':{t:'frontend',kw:['react','next.js','nextjs','reactjs']},
+  'Landing Page':{t:'frontend',kw:['landing page','website','web','situs','halaman web','company profile']},
+  'Responsif':{t:'frontend',kw:['responsif','responsive','mobile','ponsel','hp']},
+  'REST API':{t:'frontend',kw:['api','integrasi','backend','database','login']},
+  'Tailwind CSS':{t:'frontend',kw:['tailwind','css']},
+  'Toko Online':{t:'frontend',kw:['toko online','katalog online','checkout','keranjang','e-commerce','ecommerce','whatsapp']},
+  'JavaScript':{t:'frontend',kw:['javascript','js','interaktif','formulir']},
+  'Logo':{t:'design',kw:['logo']},
+  'Poster':{t:'design',kw:['poster','flyer','pamflet','banner','spanduk']},
+  'Branding':{t:'design',kw:['branding','identitas visual','kemasan','packaging','brand']},
+  'Canva':{t:'design',kw:['canva']},
+  'Feed Instagram':{t:'design',kw:['feed','template konten','desain konten']},
+  'Menu & Brosur':{t:'design',kw:['brosur','leaflet','menu cetak','buku menu']},
+  'Reels':{t:'video',kw:['reels','tiktok','video pendek','shorts','video']},
+  'CapCut':{t:'video',kw:['capcut']},
+  'Subtitle':{t:'video',kw:['subtitle','takarir']},
+  'Motion Graphics':{t:'video',kw:['motion','animasi','after effects']},
+  'Copywriting':{t:'writing',kw:['copywriting','copywriter','caption','tagline','slogan']},
+  'SEO':{t:'writing',kw:['seo','google']},
+  'Artikel':{t:'writing',kw:['artikel','blog','berita','press release']},
+  'Deskripsi Produk':{t:'writing',kw:['deskripsi produk','shopee','tokopedia','marketplace']},
+  'Excel':{t:'data',kw:['excel','spreadsheet','google sheets','sheets']},
+  'Input Data':{t:'data',kw:['input data','input','entri','data entry','rekap','data']},
+  'Pivot & Laporan':{t:'data',kw:['pivot','laporan','grafik penjualan']},
+  'Instagram':{t:'socmed',kw:['instagram','ig','sosmed','media sosial']},
+  'Kalender Konten':{t:'socmed',kw:['jadwal posting','kalender konten','posting rutin','jadwal']},
+  'Analitik':{t:'socmed',kw:['insight','analitik','engagement','followers','jangkauan']},
+  'Balas DM & Komentar':{t:'socmed',kw:['dm','komentar','balas pesan']}
+};
+const TAG_KEYS = Object.keys(TAGS);
+
+/* Bank soal. d = kesulitan (1 mudah, 2 sedang, 3 sulit), a = indeks jawaban benar.
+   [PRODUKSI] kunci jawaban (a) dan pembahasan (why) TIDAK boleh dikirim ke browser. */
+const QB = [
+  // Frontend
+  {id:'fe1',track:'frontend',comp:'Dasar React',d:1,q:'Apa fungsi prop key saat merender daftar elemen dengan map() di React?',o:['Memberi gaya CSS unik pada tiap item','Membantu React mengenali item yang berubah, bertambah, atau terhapus','Menyimpan state lokal tiap item','Wajib diisi di setiap komponen, bukan hanya daftar'],a:1,why:'key memberi identitas stabil pada tiap item sehingga React bisa memperbarui DOM secara efisien. Hindari memakai index jika urutan item bisa berubah.'},
+  {id:'fe2',track:'frontend',comp:'Dasar React',d:1,q:'Pernyataan yang benar tentang props dan state adalah…',o:['Props boleh diubah langsung oleh komponen penerima','Props dikirim dari induk dan bersifat read-only, state dikelola komponen itu sendiri','State hanya bisa dipakai di class component','Props dan state sama saja, hanya beda nama'],a:1,why:'Props mengalir satu arah dari induk dan tidak boleh dimutasi. State adalah data internal komponen yang perubahannya memicu render ulang.'},
+  {id:'fe3',track:'frontend',comp:'State Management',d:2,q:'Setelah handleClick dipanggil sekali, berapa nilai count pada render berikutnya?',code:'const [count, setCount] = useState(0);\n\nfunction handleClick() {\n  setCount(count + 1);\n  setCount(count + 1);\n  setCount(count + 1);\n}',o:['3','1','0','Terjadi error'],a:1,why:'Ketiga pemanggilan membaca nilai count yang sama (0) dari render saat ini, jadi hasilnya 1. Gunakan updater setCount(c => c + 1) jika ingin bertambah 3.'},
+  {id:'fe4',track:'frontend',comp:'State Management',d:3,q:'Data pengguna yang sedang login dibutuhkan header, sidebar, dan halaman profil yang letaknya berjauhan. Pendekatan paling tepat?',o:['Mengoper props melewati lima level komponen','Menyimpan di Context atau store global (misalnya Zustand), lalu membacanya di komponen yang butuh','Menyalin data ke state di setiap komponen secara terpisah','Menyimpan di useRef pada komponen paling atas'],a:1,why:'Context atau store global menghindari prop drilling dan menjaga satu sumber kebenaran. Salinan terpisah rawan tidak sinkron.'},
+  {id:'fe5',track:'frontend',comp:'Async & API',d:2,q:'Apa masalah utama dari kode berikut?',code:"useEffect(() => {\n  fetch('/api/produk')\n    .then(r => r.json())\n    .then(setProduk);\n});",o:['Tidak ada masalah, fetch hanya berjalan sekali','Tanpa dependency array, efek berjalan setiap render sehingga setProduk memicu request berulang','fetch tidak boleh dipakai di dalam useEffect','setProduk harus dipanggil sebelum fetch'],a:1,why:'Tambahkan [] agar efek hanya berjalan saat komponen dipasang. Tanpa itu, setiap setProduk memicu render baru yang menjalankan efek lagi.'},
+  {id:'fe6',track:'frontend',comp:'Async & API',d:3,q:'Kolom pencarian memanggil API di setiap ketikan. Kadang hasil untuk kata lama muncul menimpa hasil kata terbaru. Solusi paling tepat?',o:['Menambahkan setTimeout 1 detik sebelum menampilkan hasil','Debounce input dan batalkan request lama dengan AbortController','Mengganti ke class component','Memanggil API dua kali agar hasilnya pasti terbaru'],a:1,why:'Debounce mengurangi jumlah request, dan AbortController mencegah respons lama yang datang terlambat menimpa state (race condition).'},
+  {id:'fe7',track:'frontend',comp:'Performa',d:2,q:'Kapan useMemo paling masuk akal dipakai?',o:['Untuk membungkus semua variabel agar aplikasi cepat','Untuk perhitungan berat yang input-nya jarang berubah','Sebagai pengganti useState','Untuk menjalankan fetch data'],a:1,why:'useMemo punya biaya sendiri. Pakai untuk kalkulasi mahal atau menjaga referensi tetap stabil, bukan di semua tempat.'},
+  {id:'fe8',track:'frontend',comp:'Performa',d:3,q:'Tabel berisi 5.000 baris terasa patah-patah saat di-scroll. Langkah pertama yang paling berdampak?',o:['Virtualisasi daftar sehingga hanya baris yang terlihat yang dirender','Membungkus setiap baris dengan useMemo','Mengganti semua CSS dengan inline style','Menambahkan animasi loading'],a:0,why:'Sumber masalahnya jumlah node DOM. Virtualisasi (misalnya react-window) hanya merender puluhan baris yang terlihat, bukan ribuan.'},
+  {id:'fe9',track:'frontend',comp:'Aksesibilitas',d:1,q:'Elemen yang paling tepat untuk tombol yang menjalankan aksi, misalnya "Simpan"?',o:['<div onClick>','<button>','<span role="text">','<a href="#">'],a:1,why:'<button> sudah bisa difokus dengan keyboard, dibaca pembaca layar sebagai tombol, dan merespons Enter maupun Spasi.'},
+  {id:'fe10',track:'frontend',comp:'Aksesibilitas',d:2,q:'Tombol hapus hanya berupa ikon tempat sampah tanpa teks. Apa yang perlu ditambahkan?',o:['Warna merah agar jelas','aria-label="Hapus" atau teks tersembunyi untuk pembaca layar','Tooltip saja sudah cukup untuk semua pengguna','Tidak perlu apa-apa'],a:1,why:'Pengguna pembaca layar tidak melihat ikon. aria-label memberi nama yang bisa diumumkan. Tooltip tidak terbaca di perangkat sentuh.'},
+  // Desain Grafis
+  {id:'ds1',track:'design',comp:'Tipografi',d:1,q:'Untuk satu poster acara, berapa jenis font yang umumnya ideal?',o:['1–2 jenis, dibedakan lewat ukuran dan ketebalan','4–5 jenis agar terlihat ramai','Sebanyak jumlah informasi di poster','Selalu tepat 3 jenis'],a:0,why:'Terlalu banyak jenis font membuat desain tidak konsisten. Variasi ukuran dan ketebalan dari 1–2 keluarga font sudah cukup untuk membangun hierarki.'},
+  {id:'ds2',track:'design',comp:'Komposisi',d:1,q:'Apa yang dimaksud hierarki visual?',o:['Urutan layer di aplikasi desain','Pengaturan ukuran, warna, dan posisi agar informasi terpenting terbaca lebih dulu','Jumlah elemen dalam satu desain','Penempatan logo di pojok kanan atas'],a:1,why:'Hierarki visual mengarahkan mata pembaca: judul dan pesan utama dulu, detail pendukung setelahnya.'},
+  {id:'ds3',track:'design',comp:'Warna',d:2,q:'Klien UMKM meminta teks putih di atas latar kuning cerah. Masalah utamanya?',o:['Warna kuning tidak cocok untuk produk makanan','Kontras rendah sehingga teks sulit dibaca','Putih tidak boleh dipakai untuk teks','Tidak ada masalah'],a:1,why:'Putih di atas kuning cerah punya rasio kontras sangat rendah. Gunakan teks gelap atau gelapkan warna latar.'},
+  {id:'ds4',track:'design',comp:'Komposisi',d:2,q:'Fungsi ruang kosong (white space) dalam desain adalah…',o:['Tanda desain belum selesai','Memberi jeda visual sehingga fokus dan keterbacaan meningkat','Menghemat tinta saat dicetak','Tempat menaruh watermark'],a:1,why:'Ruang kosong memisahkan kelompok informasi dan membuat elemen penting lebih menonjol.'},
+  {id:'ds5',track:'design',comp:'File Produksi',d:2,q:'Banner akan dicetak berukuran 3 × 1 meter. Pengaturan file yang paling tepat?',o:['RGB, 72 dpi, tanpa bleed','Mode warna CMYK, resolusi sesuai jarak pandang, dan ada area bleed','Ekspor JPG kualitas rendah agar ringan','Buat ukuran A4 lalu diperbesar di percetakan'],a:1,why:'Cetak memakai CMYK. Bleed mencegah tepi putih saat dipotong, dan resolusi disesuaikan dengan jarak pandang banner.'},
+  {id:'ds6',track:'design',comp:'File Produksi',d:3,q:'Logo akan dipakai dari stempel kecil sampai baliho. Format master yang sebaiknya diserahkan?',o:['PNG 500 piksel','Vektor (SVG/AI/PDF) beserta versi PNG untuk keperluan cepat','JPG resolusi tinggi','Tangkapan layar dari Canva'],a:1,why:'Vektor bisa diperbesar tanpa pecah. File raster tetap disertakan untuk kebutuhan cepat seperti media sosial.'},
+  {id:'ds7',track:'design',comp:'Brief Klien',d:3,q:'Klien hanya berkata "bikin yang lebih wah". Langkah paling profesional?',o:['Langsung menambah efek dan warna sebanyak mungkin','Menanyakan tujuan, target audiens, dan contoh referensi, lalu menawarkan dua arah visual','Menolak karena brief tidak jelas','Memakai template populer tanpa bertanya'],a:1,why:'Brief yang samar diperjelas dengan pertanyaan dan pilihan arah visual. Ini juga menghemat jatah revisi.'},
+  // Video
+  {id:'vd1',track:'video',comp:'Format Platform',d:1,q:'Rasio aspek yang tepat untuk Instagram Reels dan TikTok?',o:['16:9','9:16','4:3','1:1'],a:1,why:'Reels dan TikTok memakai format vertikal 9:16 agar memenuhi layar ponsel.'},
+  {id:'vd2',track:'video',comp:'Editing',d:1,q:'Apa yang dimaksud jump cut?',o:['Transisi berputar antarklip','Potongan yang melompati waktu pada shot dengan sudut yang hampir sama','Efek slow motion','Menampilkan dua video berdampingan'],a:1,why:'Jump cut memotong bagian di tengah shot yang sama untuk mempercepat tempo, umum di konten vlog dan media sosial.'},
+  {id:'vd3',track:'video',comp:'Storytelling',d:2,q:'Pada video promosi 30 detik, tiga detik pertama sebaiknya berisi…',o:['Logo perusahaan yang muncul perlahan','Hook atau inti pesan yang membuat penonton berhenti scroll','Daftar nama tim produksi','Layar hitam sebagai jeda'],a:1,why:'Penonton memutuskan lanjut atau scroll dalam beberapa detik. Pembuka harus langsung menarik perhatian.'},
+  {id:'vd4',track:'video',comp:'Audio',d:2,q:'Musik latar menenggelamkan suara narator. Solusi paling tepat?',o:['Menaikkan volume semua track','Menurunkan volume musik saat narasi berbicara (ducking)','Menghapus narasi','Cukup menambahkan subtitle'],a:1,why:'Ducking menurunkan musik otomatis di bagian narasi sehingga suara tetap jelas tanpa menghilangkan suasana.'},
+  {id:'vd5',track:'video',comp:'Format Platform',d:3,q:'Klien mengeluh video terlihat pecah setelah diunggah ke Instagram. Penyebab paling mungkin?',o:['Durasi video terlalu panjang','Resolusi atau bitrate ekspor terlalu rendah atau tidak sesuai spesifikasi platform','Musik yang dipakai','Terlalu banyak teks'],a:1,why:'Platform mengompresi ulang video. Ekspor dengan resolusi dan bitrate sesuai rekomendasi platform agar hasilnya tetap tajam.'},
+  {id:'vd6',track:'video',comp:'Etika & Lisensi',d:3,q:'Klien meminta lagu populer sebagai musik latar iklan berbayar. Respons yang tepat?',o:['Langsung dipakai, toh banyak yang melakukannya','Menjelaskan risiko hak cipta dan menawarkan musik berlisensi atau bebas royalti','Memakai lagu itu tapi dipercepat agar tidak terdeteksi','Menolak proyek'],a:1,why:'Iklan berbayar dengan lagu tanpa lisensi berisiko diturunkan atau digugat. Tawarkan alternatif yang aman.'},
+  {id:'vd7',track:'video',comp:'Editing',d:2,q:'Kamu harus menyunting 40 klip footage acara menjadi video 30 detik. Langkah awal paling efisien?',o:['Langsung menyusun di timeline dari klip pertama','Menonton dan menandai momen terbaik, lalu membuat rough cut','Menambahkan efek ke semua klip','Mengekspor semua klip satu per satu'],a:1,why:'Seleksi dan rough cut lebih dulu menghemat waktu. Efek dan warna dikerjakan setelah alur cerita terkunci.'},
+  // Penulisan
+  {id:'wr1',track:'writing',comp:'Tata Bahasa',d:1,q:'Kalimat yang penulisannya sesuai EYD adalah…',o:['Saya menunggu dirumah.','Saya menunggu di rumah.','Saya menunggu di-rumah.','Saya menunggu Di rumah.'],a:1,why:'"di" sebagai kata depan yang menunjukkan tempat ditulis terpisah dari kata yang mengikutinya.'},
+  {id:'wr2',track:'writing',comp:'Struktur',d:1,q:'Teknik piramida terbalik berarti…',o:['Kesimpulan ditaruh paling akhir','Informasi terpenting diletakkan di awal tulisan','Paragraf makin panjang ke bawah','Judul ditulis paling akhir'],a:1,why:'Pembaca daring sering berhenti di awal. Inti informasi ditaruh di depan, detail menyusul.'},
+  {id:'wr3',track:'writing',comp:'Copywriting',d:2,q:'Ajakan bertindak (CTA) mana yang paling efektif untuk halaman toko kue?',o:['Klik di sini','Pesan sekarang, dikirim hari ini','Informasi lebih lanjut','Submit'],a:1,why:'CTA yang baik menyebut aksi spesifik dan manfaat langsung, bukan instruksi generik.'},
+  {id:'wr4',track:'writing',comp:'SEO Dasar',d:2,q:'Apa fungsi meta description?',o:['Menentukan peringkat utama di Google secara langsung','Ringkasan halaman yang tampil di hasil pencarian dan memengaruhi keputusan klik','Menyembunyikan teks dari pembaca','Tempat menaruh kata kunci sebanyak mungkin'],a:1,why:'Meta description tidak langsung menaikkan peringkat, tetapi memengaruhi seberapa banyak orang mengeklik hasil pencarian.'},
+  {id:'wr5',track:'writing',comp:'Copywriting',d:3,q:'Kalimat mana yang menonjolkan manfaat, bukan sekadar fitur?',o:['Baterai 5.000 mAh','Seharian penuh tanpa perlu mencari colokan','Dilengkapi chip generasi terbaru','Bodi aluminium'],a:1,why:'Manfaat menjelaskan dampaknya bagi pembeli. Fitur hanya menyebut spesifikasi.'},
+  {id:'wr6',track:'writing',comp:'Riset',d:3,q:'Kamu menemukan statistik menarik di sebuah blog tanpa sumber. Langkah paling tepat?',o:['Langsung dikutip karena terdengar meyakinkan','Menelusuri sumber primernya; jika tidak ditemukan, tidak dipakai','Mengubah angkanya sedikit','Menulis "menurut riset" tanpa menyebut sumber'],a:1,why:'Klaim tanpa sumber primer berisiko salah dan merusak kredibilitas klien.'},
+  // Data & Admin
+  {id:'dt1',track:'data',comp:'Spreadsheet',d:1,q:'Fungsi untuk menjumlahkan nilai dengan satu kriteria, misalnya total penjualan produk "Brownies"?',o:['COUNT','SUMIF','AVERAGE','CONCAT'],a:1,why:'SUMIF menjumlahkan sel yang memenuhi kriteria. Untuk beberapa kriteria, pakai SUMIFS.'},
+  {id:'dt2',track:'data',comp:'Kebersihan Data',d:1,q:'Kolom tanggal berisi format campuran (01/02/2026 dan 2026-02-01). Risiko utamanya?',o:['Ukuran file jadi lebih besar','Tanggal salah dibaca atau salah urut karena hari dan bulan tertukar','Tidak ada risiko','Rumus SUM di kolom lain tidak berfungsi'],a:1,why:'Format campuran membuat 01/02 bisa dibaca 1 Februari atau 2 Januari. Seragamkan formatnya dulu.'},
+  {id:'dt3',track:'data',comp:'Spreadsheet',d:2,q:'Kamu perlu mengambil harga produk dari tabel lain berdasarkan kode produk. Fungsi yang tepat?',o:['XLOOKUP atau VLOOKUP','LEN','ROUND','TODAY'],a:0,why:'Fungsi lookup mencari kode di tabel acuan dan mengembalikan nilai di kolom yang diminta.'},
+  {id:'dt4',track:'data',comp:'Kebersihan Data',d:2,q:'Data pelanggan berisi "Budi S.", "budi s", dan " Budi S. ". Sebelum menghapus duplikat, langkah pertama adalah…',o:['Langsung memakai Remove Duplicates','Menyeragamkan teks (TRIM, PROPER/LOWER), baru mencari duplikat','Menghapus semua nama Budi','Mengurutkan berdasarkan abjad saja'],a:1,why:'Tanpa penyeragaman, spasi dan huruf kapital membuat entri yang sama dianggap berbeda.'},
+  {id:'dt5',track:'data',comp:'Pelaporan',d:3,q:'Atasan meminta ringkasan penjualan per produk per bulan dari 10.000 baris data. Cara paling efisien?',o:['Menghitung manual dengan kalkulator','Pivot table','Menyalin data ke Word','Menulis rumus SUM satu per satu untuk setiap kombinasi'],a:1,why:'Pivot table merangkum ribuan baris dalam hitungan detik dan mudah diperbarui saat data bertambah.'},
+  {id:'dt6',track:'data',comp:'Privasi',d:3,q:'Klien mengirim foto KTP pelanggan lewat grup chat umum untuk diinput. Tindakan yang tepat?',o:['Meneruskan ke teman agar cepat selesai','Menginput sesuai tugas, menyarankan kanal yang lebih aman, dan tidak menyimpan salinan di luar keperluan','Mengunggah ke drive publik agar mudah diakses','Menyimpan di galeri ponsel pribadi'],a:1,why:'Data identitas wajib dijaga. Pakai seperlunya, sarankan kanal aman, dan jangan menyimpan salinan.'},
+  // Media sosial
+  {id:'sm1',track:'socmed',comp:'Strategi Konten',d:1,q:'Apa yang dimaksud content pillar?',o:['Tiang penyangga studio foto','Beberapa tema utama yang menjadi dasar konten berulang','Postingan yang disematkan di profil','Jumlah minimal posting per hari'],a:1,why:'Content pillar menjaga konsistensi pesan, misalnya edukasi, promo, dan cerita di balik layar.'},
+  {id:'sm2',track:'socmed',comp:'Analitik',d:1,q:'Engagement rate umumnya dihitung dari…',o:['Jumlah followers saja','Total interaksi dibagi jangkauan atau jumlah followers','Jumlah posting per minggu','Jumlah hashtag'],a:1,why:'Engagement rate menunjukkan seberapa besar audiens yang benar-benar berinteraksi, bukan sekadar melihat.'},
+  {id:'sm3',track:'socmed',comp:'Komunitas',d:2,q:'Pelanggan berkomentar kesal karena pesanannya terlambat. Respons pertama yang tepat?',o:['Menghapus komentarnya','Membalas sopan di publik, mengakui masalahnya, lalu melanjutkan detail lewat DM','Membalas bahwa itu kesalahan kurir','Mengabaikan karena hanya satu komentar'],a:1,why:'Respons publik yang sopan menunjukkan kepedulian ke semua pembaca, dan detail pribadi lebih aman dibahas lewat DM.'},
+  {id:'sm4',track:'socmed',comp:'Analitik',d:2,q:'Sebuah Reels punya jangkauan tinggi tetapi interaksinya rendah. Interpretasi paling masuk akal?',o:['Algoritma sedang error','Pembukanya menarik orang menonton, tetapi isi atau ajakan bertindaknya kurang kuat','Followers sedang libur','Konten harus segera dihapus'],a:1,why:'Jangkauan menunjukkan distribusi, interaksi menunjukkan relevansi. Evaluasi isi dan CTA-nya.'},
+  {id:'sm5',track:'socmed',comp:'Penjadwalan',d:3,q:'Waktu posting terbaik untuk akun UMKM ditentukan dari…',o:['Artikel umum tentang jam terbaik posting','Data insight kapan audiens akun itu aktif, lalu diuji beberapa minggu','Jam kerja admin','Selalu pukul 12 siang'],a:1,why:'Setiap audiens berbeda. Gunakan data akun sendiri sebagai dasar, lalu uji dan bandingkan.'},
+  {id:'sm6',track:'socmed',comp:'Strategi Konten',d:3,q:'UMKM sudah posting setiap hari, tetapi penjualan tidak naik. Langkah analisis pertama?',o:['Menambah frekuensi jadi tiga kali sehari','Memeriksa konten mana yang benar-benar mengarah ke DM, klik tautan, atau pesanan','Mengganti semua desain feed','Membeli followers'],a:1,why:'Frekuensi tidak sama dengan konversi. Telusuri konten mana yang menghasilkan aksi pembelian.'}
+];
+
+// Talenta yang sudah lolos asesmen (data fiktif untuk demo)
+const BASE = [
+  {id:'tal_nadia',name:'Nadia Prameswari',city:'Malang',track:'frontend',tracks:['frontend'],tags:['React','Landing Page','Responsif','Tailwind CSS','JavaScript'],rate:450000,available:true,availability:'Tersedia minggu ini',projects:4,onTime:100,av:1,
+   assessment:{score:84,level:'Menengah',session:'as_8f2k1n',date:'2026-10-14',comps:{'Dasar React':100,'State Management':67,'Async & API':100,'Performa':67,'Aksesibilitas':100}}},
+  {id:'tal_raka',name:'Raka Aditya',city:'Surabaya',track:'frontend',tracks:['frontend'],tags:['React','REST API','Toko Online','JavaScript','Responsif'],rate:850000,available:false,availability:'Mulai 10 Nov',projects:7,onTime:96,av:0,
+   assessment:{score:91,level:'Mahir',session:'as_2m9qa7',date:'2026-09-02',comps:{'Dasar React':100,'State Management':100,'Async & API':100,'Performa':67,'Aksesibilitas':50}}},
+  {id:'tal_bagas',name:'Bagas Wicaksono',city:'Kediri',track:'frontend',tracks:['frontend'],tags:['Landing Page','Responsif','JavaScript','Tailwind CSS'],rate:200000,available:true,availability:'Tersedia',projects:1,onTime:100,av:2,
+   assessment:{score:66,level:'Pemula',session:'as_7cz0pe',date:'2026-10-21',comps:{'Dasar React':100,'State Management':50,'Async & API':50,'Performa':0,'Aksesibilitas':100}}},
+  {id:'tal_salsa',name:'Salsabila Putri',city:'Batu',track:'design',tracks:['design'],tags:['Logo','Poster','Branding','Canva'],rate:175000,available:true,availability:'Tersedia',projects:9,onTime:100,av:4,
+   assessment:{score:89,level:'Mahir',session:'as_5hd1rw',date:'2026-08-30',comps:{'Komposisi':100,'Tipografi':100,'Warna':100,'Brief Klien':50,'File Produksi':100}}},
+  {id:'tal_kirana',name:'Kirana Dewi',city:'Malang',track:'design',tracks:['design','socmed'],tags:['Canva','Feed Instagram','Poster','Instagram'],rate:90000,available:true,availability:'Tersedia',projects:2,onTime:100,av:5,
+   assessment:{score:73,level:'Pemula',session:'as_9tq3lb',date:'2026-10-05',comps:{'Komposisi':100,'Tipografi':50,'Warna':100,'Brief Klien':50}}},
+  {id:'tal_dimas',name:'Dimas Prakoso',city:'Malang',track:'video',tracks:['video'],tags:['Reels','CapCut','Subtitle'],rate:200000,available:true,availability:'Tersedia',projects:5,onTime:90,av:3,
+   assessment:{score:80,level:'Menengah',session:'as_4ne8kx',date:'2026-09-18',comps:{'Editing':100,'Audio':50,'Format Platform':100,'Storytelling':100}}},
+  {id:'tal_yoga',name:'Yoga Saputra',city:'Sidoarjo',track:'video',tracks:['video'],tags:['Reels','Motion Graphics','CapCut'],rate:400000,available:false,availability:'Mulai 6 Nov',projects:3,onTime:100,av:2,
+   assessment:{score:87,level:'Menengah',session:'as_1wb6vy',date:'2026-10-01',comps:{'Editing':100,'Audio':100,'Format Platform':100,'Storytelling':100,'Etika & Lisensi':50}}},
+  {id:'tal_ayu',name:'Ayu Lestari',city:'Jember',track:'writing',tracks:['writing'],tags:['Copywriting','SEO','Artikel','Deskripsi Produk'],rate:120000,available:true,availability:'Tersedia',projects:6,onTime:100,av:4,
+   assessment:{score:82,level:'Menengah',session:'as_6pg2mz',date:'2026-09-25',comps:{'Tata Bahasa':100,'Copywriting':100,'SEO Dasar':50,'Riset':100,'Struktur':100}}},
+  {id:'tal_fajar',name:'Fajar Nugroho',city:'Malang',track:'data',tracks:['data'],tags:['Excel','Input Data','Pivot & Laporan'],rate:90000,available:true,availability:'Tersedia',projects:4,onTime:100,av:0,
+   assessment:{score:76,level:'Menengah',session:'as_3ky7ds',date:'2026-10-11',comps:{'Spreadsheet':100,'Kebersihan Data':50,'Privasi':100,'Pelaporan':100}}},
+  {id:'tal_intan',name:'Intan Maharani',city:'Probolinggo',track:'socmed',tracks:['socmed','writing'],tags:['Instagram','Kalender Konten','Analitik','Balas DM & Komentar','Copywriting'],rate:250000,available:true,availability:'Tersedia',projects:3,onTime:92,av:3,
+   assessment:{score:78,level:'Menengah',session:'as_0rj5ht',date:'2026-10-08',comps:{'Strategi Konten':100,'Analitik':50,'Komunitas':100,'Penjadwalan':100}}}
+];
+let CANDS = BASE.map(c => ({ ...c }));
+
+// Contoh masalah klien (satu per jalur)
+const EX = [
+  {label:'Landing page toko kue',track:'frontend',text:'Toko kue saya di Malang butuh landing page sederhana yang responsif untuk menampilkan menu dan tombol pesan via WhatsApp. Kalau bisa pakai React.'},
+  {label:'Logo & poster kedai kopi',track:'design',text:'Kedai kopi kami butuh logo baru dan 6 poster promo untuk feed Instagram dengan gaya minimalis.'},
+  {label:'Video Reels seminar',track:'video',text:'Kami panitia seminar kampus, perlu video Reels 30 detik dari footage acara, diedit pakai CapCut dan diberi subtitle. Butuh cepat.'},
+  {label:'Rekap penjualan Excel',track:'data',text:'Tolong rekap data penjualan 3 bulan di Excel, rapikan datanya, lalu buat laporan pivot per produk untuk rapat.'},
+  {label:'Deskripsi produk Shopee',track:'writing',text:'Toko camilan kami di Shopee butuh 10 deskripsi produk dan caption promosi yang ramah SEO, bahasanya santai.'},
+  {label:'Admin Instagram batik',track:'socmed',text:'UMKM batik kami butuh admin Instagram untuk jadwal posting sebulan, balas komentar, dan ringkasan insight bulanan.'}
+];
+
+/* ---------- 5. State aplikasi ---------- */
+const freshA = () => ({ step:1, name:'', city:'', skill:'', claim:CLAIMS[1], rate:150000, bio:'', track:null, conf:0,
+  gen:[], lines:[], gi:0, genDone:false, asked:[], seen:[], answers:[], cur:null, order:[], sel:null, diff:2,
+  left:QTIME, t0:0, qStart:0, result:null, showJson:false });
+const freshD = () => ({ desc:'', budget:500000, days:7, need:null, manualTrack:null, add:[], rm:[], loading:false,
+  minScore:60, onlyAvail:false, sort:'match', json:false, jsonTab:'res', reqId:'', pendingRun:false });
+const A = freshA(), D = freshD(), UI = { menu:false, howTab:'talent' };
+
+try { const y = JSON.parse(localStorage.getItem(LS) || 'null'); if (y && y.isYou) CANDS.unshift(y); } catch (e) {}
+
+/* ---------- 6. "AI" simulasi ----------
+   [PRODUKSI] detectTrack & analyzeNeed diganti panggilan LLM di backend dengan output JSON terstruktur.
+   scoreCand tetap deterministik di backend agar skor bisa diaudit. */
+function detectTrack(text) {
+  const t = (text || '').toLowerCase(); let best = null;
+  for (const [k, tr] of Object.entries(TRACKS)) {
+    const n = tr.kw.filter(w => has(t, w)).length + (has(t, tr.name.toLowerCase()) ? 2 : 0);
+    if (n && (!best || n > best.n)) best = { key:k, n };
+  }
+  if (best) best.conf = Math.min(.98, .72 + .09 * best.n);
+  return best;
+}
+const tagsFrom = text => TAG_KEYS.filter(k => TAGS[k].kw.some(w => has(text, w)));
+
+function analyzeNeed() {
+  const t = D.desc.toLowerCase();
+  let tags = tagsFrom(t).filter(x => !D.rm.includes(x));
+  D.add.forEach(x => { if (!tags.includes(x)) tags.push(x); });
+  const kws = [...new Set(TAG_KEYS.flatMap(k => TAGS[k].kw).filter(w => has(t, w)))];
+  const votes = {};
+  tags.forEach(g => { const tr = TAGS[g].t; votes[tr] = (votes[tr] || 0) + 1; });
+  const dt = detectTrack(t); if (dt) votes[dt.key] = (votes[dt.key] || 0) + .5;
+  const track = D.manualTrack || Object.keys(votes).sort((a, b) => votes[b] - votes[a])[0] || null;
+  const urgent = D.days <= 3 || ['segera','cepat','besok','mendesak','urgent','hari ini'].some(w => has(t, w));
+  const complexity = tags.length >= 5 ? 'Tinggi' : (tags.length >= 3 || t.length > 180) ? 'Menengah' : 'Ringan';
+  const conf = track ? Math.min(.96, (D.manualTrack ? .9 : .5) + .11 * tags.length) : 0;
+  return { track, tags, kws, urgent, complexity, conf, fee: track ? FEE[track] : null };
+}
+
+// Match Score = 0.40·skill + 0.35·asesmen + 0.15·budget + 0.10·reliabilitas
+const W = { skill:.40, assess:.35, budget:.15, rel:.10 };
+function scoreCand(c, need) {
+  const req = need.tags, have = req.filter(t => c.tags.includes(t)), miss = req.filter(t => !c.tags.includes(t));
+  const tf = c.track === need.track ? 1 : (c.tracks || []).includes(need.track) ? .6 : 0;
+  const skill = req.length ? .5 * tf + .5 * (have.length / req.length) : tf;
+  const assess = c.assessment.score / 100 * (tf ? 1 : .5);        // asesmen di jalur lain hanya dihitung separuh
+  const budget = c.rate <= D.budget ? 1 : Math.max(0, 1 - (c.rate - D.budget) / D.budget);
+  const rel = (c.onTime == null ? .75 : c.onTime / 100) * .6 + (c.available ? .4 : need.urgent ? .05 : .2);
+  const total = Math.round(100 * (W.skill * skill + W.assess * assess + W.budget * budget + W.rel * rel));
+  const why = [], warn = [];
+  if (tf === 1) why.push(`Lulus asesmen ${TRACKS[c.track].name} dengan skor ${c.assessment.score} (${c.assessment.level}).`);
+  else if (tf) why.push(`Punya keahlian sekunder di ${TRACKS[need.track].name}.`);
+  if (have.length) why.push(`Menguasai ${have.length} dari ${req.length} kemampuan yang dibutuhkan: ${have.join(', ')}.`);
+  if (c.rate <= D.budget) why.push(`Tarif ${rp(c.rate)} masuk dalam budget.`);
+  else warn.push(`Tarif minimum ${rp(c.rate)} di atas budget ${rp(D.budget)}.`);
+  if (!c.available) warn.push(need.urgent ? `Belum tersedia (${c.availability}), padahal kebutuhanmu mendesak.` : `Belum tersedia minggu ini (${c.availability}).`);
+  if (miss.length && have.length) warn.push(`Belum menandai kemampuan: ${miss.join(', ')}.`);
+  return { c, skill, assess, budget, rel, total, have, miss, why, warn };
+}
+
+/* ---------- 7. Routing & render ---------- */
+const route = () => { const h = location.hash.replace(/^#\/?/, ''); return h.startsWith('onboarding') ? 'onboarding' : h.startsWith('dashboard') ? 'dashboard' : h.startsWith('proyek') ? 'proyek' : h.startsWith('talenta') ? 'talenta' : 'home'; };
+function nav(r) { UI.menu = false; const h = '#/' + r; if (location.hash === h || (!location.hash && r === '')) { render(); scrollTo(0, 0); } else location.hash = h; }
+function goSec(id) {
+  UI.menu = false;
+  if (route() !== 'home') { location.hash = '#/'; setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior:'smooth' }), 80); }
+  else { renderNav(); document.getElementById(id)?.scrollIntoView({ behavior:'smooth' }); }
+}
+window.addEventListener('hashchange', () => { stopTimer(); render(); scrollTo(0, 0); });
+
+function render() {
+  renderNav();
+  const r = route();
+  $('#app').innerHTML = (r === 'home' ? viewHome() : r === 'onboarding' ? viewOnboarding() : r === 'proyek' ? viewProject() : r === 'talenta' ? viewTalent() : viewDashboard()) + footer();
+  saveP();
+  const pc = $('#pChat'); if (pc) pc.scrollTop = pc.scrollHeight;
+  if (r === 'onboarding' && A.step === 2 && !A.genDone && !T.gen) T.gen = setTimeout(genTick, 300);
+  if (r === 'onboarding' && A.step === 3) { if (!T.q) startTimer(); document.querySelector('[role=radio][aria-checked=true]')?.focus({ preventScroll:true }); }
+  if (r === 'dashboard' && D.pendingRun) { D.pendingRun = false; runMatch(); }
+}
+const renderNav = () => { $('#nav').innerHTML = navHTML(); };
+
+function navHTML() {
+  const r = route(), app = r !== 'home';
+  const link = (label, act, on) => `<button onclick="${act}" class="rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${on ? 'bg-navy-50 text-navy-900' : 'text-slate-600 hover:bg-slate-100 hover:text-navy-900'}" ${on ? 'aria-current="page"' : ''}>${label}</button>`;
+  const links = app
+    ? [link('Beranda', "nav('')"), link('Asesmen Talenta', "nav('onboarding')", r === 'onboarding'), link('Dashboard Talenta', "nav('talenta')", r === 'talenta'), link('Dashboard Klien', "nav('dashboard')", r === 'dashboard'), ...(P ? [link('Ruang Proyek', "nav('proyek')", r === 'proyek')] : [])]
+    : [link('Keunggulan', "goSec('keunggulan')"), link('Cara Kerja', "goSec('cara-kerja')"), link('Rumus Skor', "goSec('skor')"), link('FAQ', "goSec('faq')")];
+  const right = app
+    ? `<span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">Mode demo</span><button class="${btn('ghost','sm')}" onclick="resetDemo()">${ic('refresh','h-4 w-4')} Reset</button>`
+    : `<button class="${btn('ghost','sm')}" onclick="nav('dashboard')">Cari talenta</button><button class="${btn('pri','sm')}" onclick="nav('onboarding')">Ikuti asesmen</button>`;
+  return `<div class="border-b border-slate-200/80 bg-white/85 backdrop-blur">
+    <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+      <button onclick="nav('')" class="flex items-center gap-2.5 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500" aria-label="Rintisa, ke beranda">${LOGO('h-8 w-8')}<span class="text-lg font-extrabold tracking-tight text-navy-900">Rintisa</span></button>
+      <nav class="hidden items-center gap-1 md:flex" aria-label="Navigasi utama">${links.join('')}</nav>
+      <div class="hidden items-center gap-2 md:flex">${right}</div>
+      <button class="rounded-lg p-2 text-navy-900 hover:bg-slate-100 md:hidden" onclick="UI.menu=!UI.menu;renderNav()" aria-label="Menu" aria-expanded="${UI.menu}">${ic(UI.menu ? 'x' : 'menu')}</button>
+    </div>
+    ${UI.menu ? `<div class="border-t border-slate-200 bg-white px-4 py-3 md:hidden"><div class="flex flex-col gap-1">${links.join('')}<div class="mt-2 flex flex-wrap gap-2 border-t border-slate-100 pt-3">${right}</div></div></div>` : ''}
+  </div>`;
+}
+
+/* ---------- 8. Komponen kecil ---------- */
+const ring = (v, col, outer = 'h-16 w-16', inner = 'h-[52px] w-[52px]', txt = 'text-lg') =>
+  `<div class="score-ring ${outer} shrink-0" style="--v:${v};--c:${col}" role="img" aria-label="Skor ${v} dari 100"><span class="${inner}"><b class="${txt} font-extrabold tabular-nums text-navy-950">${v}</b></span></div>`;
+const scoreCol = s => s >= 80 ? '#059669' : s >= 65 ? '#2563EB' : '#D97706';
+const avatar = (c, cls = 'h-12 w-12 text-base') => `<div class="grid ${cls} shrink-0 place-items-center rounded-xl font-bold ${AV[(c.av || 0) % AV.length]}">${esc(initials(c.name))}</div>`;
+const diffBadge = d => `<span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600"><span class="flex items-end gap-0.5">${[1,2,3].map(i => `<i class="block w-1 rounded-full ${i <= d ? 'bg-navy-700' : 'bg-slate-300'}" style="height:${4 + i * 2}px"></i>`).join('')}</span>${DIFF[d]}</span>`;
+const bar = (v, color = 'bg-navy-700') => `<div class="h-1.5 rounded-full bg-slate-200"><div class="h-full rounded-full ${color}" style="width:${Math.max(0, Math.min(100, v))}%"></div></div>`;
+const field = (label, control) => `<label class="block"><span class="mb-1.5 block text-sm font-semibold text-navy-900">${label}</span>${control}</label>`;
+const checkLi = t => `<li class="flex gap-2.5"><span class="mt-0.5 shrink-0 text-emerald-600">${ic('check','h-4 w-4')}</span><span>${t}</span></li>`;
+const eyebrow = (t, dark) => `<p class="text-sm font-semibold ${dark ? 'text-emerald-400' : 'text-emerald-700'}">${t}</p>`;
+const h2cls = 'mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl';
+
+function hl(obj) { // pewarnaan sintaks JSON sederhana
+  return esc(JSON.stringify(obj, null, 2)).replace(/(&quot;(?:\\&quot;|[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|-?\b\d+(?:\.\d+)?\b/g,
+    (m, str, colon, bool) => str ? (colon ? `<span class="json-key">${str}</span>${colon}` : `<span class="json-str">${str}</span>`) : bool ? `<span class="json-bool">${m}</span>` : `<span class="json-num">${m}</span>`);
+}
+const jsonBox = o => `<div class="relative mt-4 overflow-hidden rounded-xl bg-navy-950 ring-1 ring-navy-800"><button class="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/20" onclick="copyJSON(this)">${ic('copy','h-3.5 w-3.5')} Salin</button><pre class="max-h-[420px] overflow-auto p-4 pr-20 font-mono text-[12.5px] leading-relaxed text-slate-300">${hl(o)}</pre></div>`;
+function copyJSON(b) { const t = b.nextElementSibling.textContent; try { navigator.clipboard.writeText(t).then(() => toast('JSON disalin.'), () => toast('Browser menolak akses clipboard.')); } catch (e) { toast('Browser menolak akses clipboard.'); } }
+
+function toast(m) { const el = $('#toast'); el.innerHTML = `<div role="status" class="fade-up pointer-events-auto max-w-md rounded-xl bg-navy-950 px-4 py-3 text-sm font-medium text-white shadow-lift">${esc(m)}</div>`; clearTimeout(T.toast); T.toast = setTimeout(() => el.innerHTML = '', 3000); }
+function openModal(html, label) {
+  $('#modal').innerHTML = `<div class="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/50 p-4 backdrop-blur-sm sm:items-center" onclick="if(event.target===this)closeModal()"><div role="dialog" aria-modal="true" aria-label="${esc(label)}" class="fade-up relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-lift"><button class="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" onclick="closeModal()" aria-label="Tutup">${ic('x')}</button>${html}</div></div>`;
+  document.body.style.overflow = 'hidden'; $('#modal [role=dialog] button')?.focus();
+}
+function closeModal() { $('#modal').innerHTML = ''; document.body.style.overflow = ''; }
+
+/* =====================================================================
+   9. LANDING PAGE
+   ===================================================================== */
+function viewHome() { return hero() + problem() + valueProp() + how() + scoreSec() + faq() + cta(); }
+
+function hero() {
+  const mini = (ini, av, name, meta, s) => `<div class="flex items-center gap-3 rounded-xl border border-slate-100 p-3"><div class="grid h-9 w-9 place-items-center rounded-lg text-xs font-bold ${av}">${ini}</div><div class="min-w-0 flex-1"><p class="truncate text-sm font-semibold text-navy-950">${name}</p><p class="truncate text-xs text-slate-500">${meta}</p></div><span class="rounded-lg px-2 py-1 text-xs font-bold tabular-nums" style="background:${scoreCol(s)}1a;color:${scoreCol(s)}">${s}</span></div>`;
+  return `<section class="relative overflow-hidden border-b border-slate-200 bg-white">
+    <div class="dotgrid absolute inset-0"></div><div class="absolute inset-0 bg-gradient-to-b from-white/30 via-white/70 to-white"></div>
+    <div class="relative mx-auto grid max-w-6xl items-center gap-14 px-4 py-16 sm:px-6 lg:grid-cols-[1.08fr_1fr] lg:py-24">
+      <div class="fade-up">
+        <span class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">${ic('sparkles','h-3.5 w-3.5')} Asesmen AI untuk talenta pemula</span>
+        <h1 class="mt-5 text-4xl font-extrabold leading-[1.08] tracking-tight text-navy-950 sm:text-5xl lg:text-[56px]">Talenta pemula,<br><span class="text-emerald-600">kualitas yang sudah teruji.</span></h1>
+        <p class="mt-5 max-w-xl text-lg leading-relaxed text-slate-600">Rintisa menguji kemampuan setiap pekerja lewat asesmen adaptif berbasis AI sebelum profilnya aktif, lalu mencocokkan mereka dengan pekerjaan mikro dari UMKM. Klien tidak perlu menebak kualitas, pekerja tidak perlu portofolio.</p>
+        <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+          <button class="${btn('acc','lg')}" onclick="nav('onboarding')">Ikuti asesmen gratis ${ic('arrowR','h-4 w-4')}</button>
+          <button class="${btn('out','lg')}" onclick="nav('dashboard')">Saya mencari talenta</button>
+        </div>
+        <ul class="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-slate-600">${['Dana ditahan di escrow','Revisi dikunci sesuai kontrak','Skor yang bisa dijelaskan'].map(checkLi).join('')}</ul>
+      </div>
+      <div class="relative mx-auto w-full max-w-md px-2 pb-16 pt-6 fade-up" style="animation-delay:.12s">
+        <div class="absolute inset-0 -z-0 rounded-[32px] bg-gradient-to-br from-navy-100 via-white to-emerald-100 opacity-80 blur-2xl"></div>
+        <div class="absolute right-0 top-0 z-20 inline-flex items-center gap-1.5 rounded-xl bg-navy-900 px-3 py-2 text-xs font-semibold text-white shadow-lift">${ic('lock','h-3.5 w-3.5 text-emerald-400')} Rp 500.000 ditahan di escrow</div>
+        <div class="relative z-10 rounded-2xl border border-slate-200 bg-white p-5 shadow-lift">
+          <div class="flex items-center justify-between"><span class="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">${ic('sparkles','h-4 w-4 text-emerald-600')} AI Smart Matching</span><span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">3 kandidat relevan</span></div>
+          <p class="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">"Toko kue saya butuh landing page responsif dengan tombol pesan via WhatsApp."</p>
+          <div class="mt-4 flex items-center gap-4">
+            <div class="grid h-12 w-12 place-items-center rounded-xl bg-emerald-100 text-sm font-bold text-emerald-800">NP</div>
+            <div class="min-w-0 flex-1"><p class="font-bold text-navy-950">Nadia Prameswari</p><p class="text-xs text-slate-500">Frontend Developer · Malang</p><span class="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">${ic('shieldCheck','h-3 w-3')} Asesmen 84 · Menengah</span></div>
+            ${ring(89, '#059669')}
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5">${[['Kecocokan skill',88],['Skor asesmen',84],['Kesesuaian budget',100],['Reliabilitas',100]].map(([l, v]) => `<div><div class="flex justify-between text-[11px]"><span class="font-semibold text-slate-500">${l}</span><span class="font-bold text-navy-900">${v}</span></div><div class="mt-1">${bar(v)}</div></div>`).join('')}</div>
+          <div class="mt-4 space-y-2">${mini('RA', AV[0], 'Raka Aditya', 'Frontend · tarif di atas budget', 79)}${mini('BW', AV[2], 'Bagas Wicaksono', 'Frontend · level Pemula', 78)}</div>
+        </div>
+        <div class="absolute -left-1 bottom-0 z-20 w-56 rounded-2xl border border-slate-200 bg-white p-4 shadow-lift sm:-left-8">
+          <div class="flex items-center gap-2.5"><span class="grid h-8 w-8 place-items-center rounded-lg bg-navy-900 text-white">${ic('shieldCheck','h-4 w-4')}</span><div><p class="text-[11px] font-semibold text-slate-500">Asesmen adaptif</p><p class="text-sm font-bold text-navy-950">Lulus · 84/100</p></div></div>
+          <div class="mt-3 flex h-9 items-end gap-1.5">${[2,3,3,2,3].map((d, i) => `<span class="flex-1 rounded ${i === 3 ? 'bg-amber-400' : 'bg-emerald-500'}" style="height:${d * 33}%"></span>`).join('')}</div>
+          <p class="mt-1.5 text-[11px] text-slate-500">Kesulitan mengikuti jawaban</p>
+        </div>
+      </div>
+    </div>
+    <div class="relative border-t border-slate-200 bg-white">
+      <dl class="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-4 py-8 sm:px-6 md:grid-cols-4">${[['6','jalur keahlian terstandar'],['5','soal adaptif per asesmen'],['4','faktor dalam Match Score'],['0','portofolio yang diminta']].map(([n, l]) => `<div><dt class="sr-only">${l}</dt><dd class="text-3xl font-extrabold text-navy-950">${n}</dd><dd class="mt-1 text-sm text-slate-500">${l}</dd></div>`).join('')}</dl>
+    </div>
+  </section>`;
+}
+
+function problem() {
+  const P = [
+    ['alert','Pemula tertolak sebelum mulai','Marketplace freelance menuntut portofolio dan ulasan. Pekerja baru kalah bersaing meski sebenarnya mampu.','Asesmen menggantikan syarat portofolio.'],
+    ['eye','Klien sulit menilai kualitas','Pemilik UMKM tanpa latar teknis cenderung memilih harga termurah, lalu kecewa dengan hasilnya.','Match Score dengan alasan yang mudah dibaca.'],
+    ['layers','Klaim tidak terstandar','"Bisa desain" di bio tidak punya ukuran objektif. Dua pekerja dengan klaim sama bisa berbeda jauh kualitasnya.','Satu standar kompetensi per jalur keahlian.']
+  ];
+  return `<section id="masalah" class="scroll-mt-20 py-20"><div class="mx-auto max-w-6xl px-4 sm:px-6">
+    <div class="max-w-2xl">${eyebrow('Masalahnya')}<h2 class="${h2cls} text-navy-950">Pasar kerja mikro macet di dua sisi.</h2><p class="mt-4 text-lg text-slate-600">Pekerja pemula tidak bisa membuktikan kemampuan, dan klien kecil tidak punya cara untuk menilainya.</p></div>
+    <div class="mt-10 grid gap-4 md:grid-cols-3">${P.map(([i, t, d, s], k) => `<article class="${CARD} flex flex-col p-6"><div class="flex items-center justify-between"><span class="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600">${ic(i)}</span><span class="font-mono text-sm font-semibold text-slate-300">0${k + 1}</span></div><h3 class="mt-5 text-lg font-bold text-navy-950">${t}</h3><p class="mt-2 flex-1 text-sm leading-relaxed text-slate-600">${d}</p><p class="mt-5 flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-emerald-700">${ic('arrowR','h-4 w-4')} ${s}</p></article>`).join('')}</div>
+  </div></section>`;
+}
+
+function valueProp() {
+  const opt = (t, on) => `<div class="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs ${on ? 'border-navy-900 bg-navy-50 font-semibold text-navy-900' : 'border-slate-200 bg-white text-slate-600'}"><span class="grid h-5 w-5 shrink-0 place-items-center rounded ${on ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-500'} text-[10px] font-bold">${on ? '✓' : ''}</span>${t}</div>`;
+  const CMP = [
+    ['Validasi kemampuan', 'Asesmen AI wajib sebelum profil aktif', ['Ulasan dan portofolio', 'p'], ['Tidak ada', 'n']],
+    ['Peluang untuk pemula', 'Dicocokkan berdasarkan hasil asesmen', ['Kalah bersaing dengan akun berulasan', 'n'], ['Siapa cepat dia dapat', 'p']],
+    ['Cara klien memilih', 'Match Score dengan alasan tertulis', ['Menyaring banyak proposal', 'p'], ['Chat satu per satu', 'n']],
+    ['Keamanan pembayaran', 'Escrow, DP cair di awal', ['Escrow, potongan biaya berat untuk proyek kecil', 'p'], ['Rawan gagal bayar', 'n']],
+    ['Revisi', 'Kuota dikunci di kontrak', ['Tergantung negosiasi', 'p'], ['Tanpa batas jelas', 'n']]
+  ];
+  const cell = ([t, s]) => `<td class="px-4 py-4 align-top text-slate-600"><span class="flex gap-2"><span class="mt-1.5 h-2 w-2 shrink-0 rounded-full ${s === 'p' ? 'bg-amber-400' : 'bg-rose-400'}"></span>${t}</span></td>`;
+  return `<section id="keunggulan" class="scroll-mt-20 border-y border-slate-200 bg-white py-20"><div class="mx-auto max-w-6xl px-4 sm:px-6">
+    <div class="max-w-2xl">${eyebrow('Keunggulan')}<h2 class="${h2cls} text-navy-950">Standar kualitas yang terukur, bukan sekadar klaim di bio.</h2></div>
+    <div class="mt-10 grid gap-4 md:grid-cols-3">
+      <article class="${CARD} grid gap-6 p-6 md:col-span-2 md:grid-cols-2">
+        <div><span class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">${ic('sparkles')}</span><h3 class="mt-5 text-lg font-bold text-navy-950">Asesmen adaptif berbasis AI</h3><p class="mt-2 text-sm leading-relaxed text-slate-600">Tulis keahlian dengan bahasamu sendiri, AI memetakannya ke jalur dan kompetensi baku. Soal menjadi lebih sulit saat jawabanmu benar, sehingga skor akhir mencerminkan level sebenarnya.</p></div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><div class="flex flex-wrap items-center justify-between gap-2 text-xs"><span class="font-semibold text-navy-900">Soal 3 dari 5 · State Management</span>${diffBadge(3)}</div><p class="mt-3 text-sm font-semibold text-navy-950">Data user dipakai header, sidebar, dan profil. Pendekatan paling tepat?</p><div class="mt-3 space-y-2">${opt('Oper props lewat lima level')}${opt('Context atau store global', true)}${opt('Salin ke state tiap komponen')}</div></div>
+      </article>
+      <article class="${CARD} p-6"><span class="grid h-10 w-10 place-items-center rounded-xl bg-sky-50 text-sky-700">${ic('target')}</span><h3 class="mt-5 text-lg font-bold text-navy-950">Match Score transparan</h3><p class="mt-2 text-sm leading-relaxed text-slate-600">Setiap rekomendasi dipecah menjadi empat faktor berbobot, lengkap dengan alasan.</p>
+        <div class="mt-5 space-y-2.5">${[['Skill',88],['Asesmen',84],['Budget',100],['Reliabilitas',100]].map(([l, v]) => `<div class="flex items-center gap-3 text-xs"><span class="w-20 font-semibold text-slate-500">${l}</span><div class="flex-1">${bar(v, 'bg-sky-600')}</div><span class="w-7 text-right font-bold text-navy-900">${v}</span></div>`).join('')}</div></article>
+      <article class="${CARD} p-6"><span class="grid h-10 w-10 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic('lock')}</span><h3 class="mt-5 text-lg font-bold text-navy-950">Dana aman di escrow</h3><p class="mt-2 text-sm leading-relaxed text-slate-600">Klien membayar di awal, pekerja langsung menerima DP sebagai modal kerja.</p>
+        <dl class="mt-5 space-y-2 text-sm">${[['Ditahan Rintisa','Rp 500.000','text-navy-950'],['DP cair ke pekerja (30%)','Rp 150.000','text-emerald-700'],['Cair setelah hasil diterima','Rp 350.000','text-slate-500']].map(([l, v, c]) => `<div class="flex justify-between rounded-lg bg-slate-50 px-3 py-2"><dt class="text-slate-600">${l}</dt><dd class="font-bold tabular-nums ${c}">${v}</dd></div>`).join('')}</dl></article>
+      <article class="${CARD} grid gap-6 p-6 md:col-span-2 md:grid-cols-2">
+        <div><span class="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-700">${ic('clipboard')}</span><h3 class="mt-5 text-lg font-bold text-navy-950">Revisi terkunci, progres terlihat</h3><p class="mt-2 text-sm leading-relaxed text-slate-600">Jumlah revisi disepakati di kontrak dan tombolnya terkunci otomatis saat kuota habis. Pekerja mengirim update berkala sehingga klien tidak menebak-nebak.</p></div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs font-semibold text-slate-500">Revisi terpakai 2 dari 3</p><div class="mt-2 flex gap-2">${[1,1,0].map(u => `<span class="grid h-7 w-7 place-items-center rounded-full border-2 border-navy-900 ${u ? 'bg-navy-900 text-white' : ''}">${u ? ic('check','h-3.5 w-3.5') : ''}</span>`).join('')}</div>
+          <p class="mt-4 text-xs font-semibold text-slate-500">Progres pekerjaan · 60%</p><div class="mt-2">${bar(60, 'bg-emerald-500')}</div>
+          <ol class="mt-4 space-y-2 border-l-2 border-slate-200 pl-4 text-xs text-slate-600"><li><b class="text-navy-900">Hari 1</b> · Wireframe disetujui</li><li><b class="text-navy-900">Hari 3</b> · Halaman menu selesai</li></ol></div>
+      </article>
+    </div>
+    <div class="mt-16"><h3 class="text-xl font-bold text-navy-950">Dibandingkan cara yang ada sekarang</h3>
+      <div class="mt-5 overflow-x-auto rounded-2xl border border-slate-200 shadow-soft"><table class="w-full min-w-[720px] border-collapse bg-white text-left text-sm">
+        <thead><tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><th class="px-4 py-3 font-semibold">Aspek</th><th class="bg-emerald-50/70 px-4 py-3 font-bold text-emerald-800">Rintisa</th><th class="px-4 py-3 font-semibold">Marketplace freelance umum</th><th class="px-4 py-3 font-semibold">Grup lowongan media sosial</th></tr></thead>
+        <tbody class="divide-y divide-slate-100">${CMP.map(([a, r, m, g]) => `<tr><th scope="row" class="px-4 py-4 align-top font-semibold text-navy-950">${a}</th><td class="bg-emerald-50/50 px-4 py-4 align-top font-semibold text-navy-900"><span class="flex gap-2"><span class="mt-0.5 shrink-0 text-emerald-600">${ic('check','h-4 w-4')}</span>${r}</span></td>${cell(m)}${cell(g)}</tr>`).join('')}</tbody>
+      </table></div>
+      <p class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500"><span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amber-400"></span>Sebagian terpenuhi</span><span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-rose-400"></span>Belum terpenuhi</span></p>
+    </div>
+  </div></section>`;
+}
+
+const HOW = {
+  talent:[['clipboard','Isi profil & keahlian','Tulis keahlianmu dengan bahasamu sendiri, misalnya "Frontend Developer" atau "desain poster Canva".'],
+          ['sparkles','Ikuti asesmen adaptif','AI menyusun 5 soal sesuai jalurmu. Jawaban benar menaikkan tingkat kesulitan, jawaban salah menurunkannya.'],
+          ['shieldCheck','Profil aktif & terverifikasi','Skor 60 ke atas membuka profilmu, lengkap dengan level dan skor per kompetensi.'],
+          ['wallet','Terima pekerjaan, DP cair','Klien yang cocok mengundangmu. Begitu kontrak disetujui, DP langsung cair sebagai modal kerja.']],
+  client:[['chat','Ceritakan masalahmu','Tidak perlu istilah teknis. Cukup "butuh halaman web untuk jualan kue".'],
+          ['target','AI menerjemahkan kebutuhan','Sistem memetakan masalahmu ke kategori, kemampuan yang dibutuhkan, dan kisaran honor wajar.'],
+          ['users','Bandingkan kandidat terverifikasi','Setiap kandidat punya Match Score, rincian empat faktor, dan alasan tertulis.'],
+          ['lock','Bayar aman lewat escrow','Dana ditahan, revisi dikunci sesuai kontrak, pelunasan setelah hasil kamu terima.']]
+};
+function how() {
+  const t = UI.howTab === 'talent';
+  return `<section id="cara-kerja" class="scroll-mt-20 py-20"><div class="mx-auto max-w-6xl px-4 sm:px-6">
+    <div class="flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
+      <div class="max-w-2xl">${eyebrow('Cara kerja')}<h2 class="${h2cls} text-navy-950">Dari daftar sampai dibayar, dalam empat langkah.</h2></div>
+      <div class="inline-flex rounded-xl bg-white p-1 shadow-soft ring-1 ring-slate-200" role="tablist" aria-label="Pilih peran">${[['talent','Untuk talenta'],['client','Untuk klien']].map(([k, l]) => `<button role="tab" aria-selected="${UI.howTab === k}" onclick="UI.howTab='${k}';document.getElementById('cara-kerja').outerHTML=how()" class="rounded-lg px-4 py-2 text-sm font-semibold transition ${UI.howTab === k ? 'bg-navy-900 text-white shadow-sm' : 'text-slate-600 hover:text-navy-900'}">${l}</button>`).join('')}</div>
+    </div>
+    <ol class="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">${HOW[UI.howTab].map(([i, h, p], k) => `<li class="${CARD} relative p-6"><div class="flex items-center justify-between"><span class="grid h-10 w-10 place-items-center rounded-xl ${t ? 'bg-emerald-50 text-emerald-700' : 'bg-navy-50 text-navy-700'}">${ic(i)}</span><span class="font-mono text-sm font-semibold text-slate-300">0${k + 1}</span></div><h3 class="mt-5 font-bold text-navy-950">${h}</h3><p class="mt-2 text-sm leading-relaxed text-slate-600">${p}</p></li>`).join('')}</ol>
+    <button onclick="nav('${t ? 'onboarding' : 'dashboard'}')" class="${btn('pri')} mt-8">${t ? 'Coba asesmen sekarang' : 'Coba Smart Matching'} ${ic('arrowR','h-4 w-4')}</button>
+  </div></section>`;
+}
+
+function scoreSec() {
+  const F = [['Kecocokan skill', .40, 'Jalur keahlian dan kemampuan yang dibutuhkan klien'], ['Skor asesmen', .35, 'Hasil tes adaptif di jalur yang relevan'], ['Kesesuaian budget', .15, 'Tarif minimum talenta dibanding budget klien'], ['Reliabilitas', .10, 'Ketersediaan dan riwayat tepat waktu']];
+  return `<section id="skor" class="relative scroll-mt-20 overflow-hidden bg-navy-950 py-20 text-white">
+    <div class="dotgrid-dark absolute inset-0"></div>
+    <div class="relative mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:items-center">
+      <div>${eyebrow('Transparansi', true)}<h2 class="${h2cls}">Skor yang bisa dijelaskan, bukan kotak hitam.</h2>
+        <p class="mt-4 text-lg leading-relaxed text-slate-300">AI dipakai untuk memahami bahasa sehari-hari dan menyusun soal. Penilaian akhirnya memakai rumus tetap yang bisa diaudit, sehingga klien tahu kenapa seorang talenta direkomendasikan dan talenta tahu apa yang perlu ditingkatkan.</p>
+        <ul class="mt-6 space-y-3 text-slate-300">${['Bobot faktor sama untuk semua klien dan talenta.','Setiap kandidat disertai alasan dan catatan risiko tertulis.','Hasil asesmen tidak bisa diubah oleh talenta.'].map(s => `<li class="flex gap-2.5"><span class="mt-0.5 shrink-0 text-emerald-400">${ic('check','h-4 w-4')}</span>${s}</li>`).join('')}</ul></div>
+      <div class="rounded-2xl border border-white/10 bg-white/[.04] p-6">
+        <p class="font-mono text-sm text-slate-400">// Match Score (0–100)</p>
+        <p class="mt-2 font-mono text-[15px] leading-7">match = <span class="text-emerald-400">0.40</span>·skill + <span class="text-emerald-400">0.35</span>·asesmen<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ <span class="text-emerald-400">0.15</span>·budget + <span class="text-emerald-400">0.10</span>·reliabilitas</p>
+        <div class="mt-6 space-y-4">${F.map(([l, w, d]) => `<div><div class="flex items-baseline justify-between gap-3"><span class="text-sm font-semibold">${l}</span><span class="font-mono text-sm text-emerald-400">${Math.round(w * 100)}%</span></div><div class="mt-1.5 h-1.5 rounded-full bg-white/10"><div class="h-full rounded-full bg-emerald-400" style="width:${w * 250}%"></div></div><p class="mt-1 text-xs text-slate-400">${d}</p></div>`).join('')}</div>
+        <div class="mt-6 border-t border-white/10 pt-5"><p class="font-mono text-sm text-slate-400">// Skor asesmen</p><p class="mt-2 font-mono text-[15px]">skor = Σ(benar × bobot) ÷ Σ bobot × 100</p><p class="mt-2 text-sm text-slate-400">Bobot soal: mudah 1, sedang 2, sulit 3. Lulus jika skor ≥ ${PASS}.</p></div>
+      </div>
+    </div></section>`;
+}
+
+function faq() {
+  const Q = [
+    ['Bagaimana AI membuat soal asesmen?', 'Pada prototipe ini soal diambil dari bank soal per jalur dan dipilih secara adaptif. Pada versi produksi, model bahasa (LLM) menyusun variasi soal dari blueprint kompetensi, soal ditinjau sebelum dipakai, dan kunci jawaban tidak pernah dikirim ke browser.'],
+    ['Bagaimana jika saya gagal asesmen?', 'Kamu mendapat pembahasan tiap soal dan rincian kompetensi yang perlu ditingkatkan. Asesmen bisa diulang setelah 7 hari dengan kombinasi soal berbeda.'],
+    ['Apakah peserta bisa mencontek?', 'Urutan pilihan diacak, ada batas waktu per soal, dan tingkat kesulitan berubah mengikuti jawaban, sehingga dua peserta jarang mendapat set soal yang sama. Skor juga dikalibrasi ulang dengan rating proyek nyata.'],
+    ['Berapa kisaran honor di Rintisa?', 'Rintisa fokus pada pekerjaan mikro, kira-kira Rp 25.000 sampai Rp 2.000.000 per proyek. Dashboard klien menampilkan kisaran honor wajar untuk setiap jenis pekerjaan.'],
+    ['Apa yang terjadi kalau klien membatalkan sepihak?', 'DP yang sudah cair tetap menjadi hak pekerja. Sisa dana di escrow ditinjau admin berdasarkan progres yang tercatat di ruang kerja.']
+  ];
+  return `<section id="faq" class="scroll-mt-20 border-t border-slate-200 bg-white py-20"><div class="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1fr_1.6fr]">
+    <div>${eyebrow('FAQ')}<h2 class="${h2cls} text-navy-950">Pertanyaan yang sering muncul.</h2><p class="mt-4 text-slate-600">Termasuk pertanyaan yang biasanya ditanyakan penguji saat sidang.</p></div>
+    <div class="divide-y divide-slate-200 rounded-2xl border border-slate-200">${Q.map(([q, a]) => `<details class="group p-5"><summary class="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold text-navy-950">${q}<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition group-open:rotate-45">+</span></summary><p class="mt-3 text-sm leading-relaxed text-slate-600">${a}</p></details>`).join('')}</div>
+  </div></section>`;
+}
+
+function cta() {
+  return `<section class="px-4 py-20 sm:px-6"><div class="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-br from-navy-900 to-navy-800 px-6 py-14 text-center sm:px-12">
+    <div class="dotgrid-dark absolute inset-0"></div>
+    <div class="relative"><h2 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Buktikan kemampuanmu hari ini.</h2><p class="mx-auto mt-3 max-w-xl text-slate-300">Asesmen hanya butuh sekitar lima menit. Hasilnya langsung menjadi lencana yang dilihat klien.</p>
+    <div class="mt-8 flex flex-col justify-center gap-3 sm:flex-row"><button class="${btn('acc','lg')}" onclick="nav('onboarding')">Ikuti asesmen ${ic('arrowR','h-4 w-4')}</button><button class="${btn('glass','lg')}" onclick="nav('dashboard')">Cari talenta</button></div></div>
+  </div></section>`;
+}
+
+function footer() {
+  const col = (h, items) => `<div><p class="text-sm font-bold text-navy-950">${h}</p><ul class="mt-3 space-y-2 text-sm text-slate-500">${items.map(([l, a]) => `<li>${a ? `<button class="hover:text-navy-900" onclick="${a}">${l}</button>` : l}</li>`).join('')}</ul></div>`;
+  return `<footer class="border-t border-slate-200 bg-white"><div class="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+    <div class="grid gap-10 sm:grid-cols-2 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
+      <div><div class="flex items-center gap-2.5">${LOGO('h-8 w-8')}<span class="text-lg font-extrabold text-navy-900">Rintisa</span></div><p class="mt-3 max-w-xs text-sm leading-relaxed text-slate-500">Platform kerja mikro yang menstandarkan kualitas talenta pemula lewat asesmen AI.</p></div>
+      ${col('Produk', [['Asesmen AI', "nav('onboarding')"], ['Smart Matching', "nav('dashboard')"], ['Rumus skor', "goSec('skor')"]])}
+      ${col('Pengguna', [['Untuk talenta', "UI.howTab='talent';goSec('cara-kerja')"], ['Untuk klien', "UI.howTab='client';goSec('cara-kerja')"], ['FAQ', "goSec('faq')"]])}
+      ${col('Proyek', [['Tugas Akhir Sistem Informasi'], ['Prototipe MVP v2']])}
+    </div>
+    <div class="mt-10 flex flex-col justify-between gap-2 border-t border-slate-100 pt-6 text-xs text-slate-500 sm:flex-row"><p>© 2026 Rintisa. Prototipe untuk keperluan akademik.</p><p>Seluruh data talenta pada demo ini fiktif.</p></div>
+  </div></footer>`;
+}
+
+/* =====================================================================
+   10. ONBOARDING: DYNAMIC AI ASSESSMENT
+   ===================================================================== */
+function stepper(cur) {
+  const st = ['Profil', 'Susun asesmen', 'Asesmen', 'Hasil'];
+  return `<ol class="flex items-center gap-2 sm:gap-3">${st.map((s, i) => { const n = i + 1, done = n < cur, on = n === cur;
+    return `<li class="flex ${n < 4 ? 'flex-1' : ''} items-center gap-2" ${on ? 'aria-current="step"' : ''}><span class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${done ? 'bg-emerald-600 text-white' : on ? 'bg-navy-900 text-white' : 'bg-slate-200 text-slate-500'}">${done ? ic('check','h-3.5 w-3.5') : n}</span><span class="hidden whitespace-nowrap text-sm font-semibold sm:block ${on ? 'text-navy-900' : 'text-slate-500'}">${s}</span>${n < 4 ? `<span class="h-px flex-1 ${done ? 'bg-emerald-300' : 'bg-slate-200'}"></span>` : ''}</li>`; }).join('')}</ol>`;
+}
+
+function viewOnboarding() {
+  return `<div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+    <div class="mb-8">${eyebrow('Untuk pencari kerja')}<h1 class="mt-1 text-3xl font-extrabold tracking-tight text-navy-950 sm:text-4xl">Aktifkan profil lewat asesmen AI</h1><p class="mt-2 max-w-2xl text-slate-600">Tidak perlu portofolio. Tulis keahlianmu, kerjakan ${TEST_LEN} soal adaptif, dan dapatkan lencana kompetensi yang dilihat klien.</p></div>
+    <div class="${CARD} mb-6 p-4">${stepper(A.step)}</div>
+    <div class="grid gap-6 lg:grid-cols-[1fr_320px]"><div>${[obProfile, obGenerate, obTest, obResult][A.step - 1]()}</div><aside class="space-y-4">${obSide()}</aside></div>
+  </div>`;
+}
+
+function detHTML() {
+  const d = detectTrack(A.skill);
+  if (d) return `<span class="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">${ic('sparkles','h-4 w-4')} AI mendeteksi jalur: ${TRACKS[d.key].name}</span><span class="ml-2 text-xs text-slate-500">keyakinan ${Math.round(d.conf * 100)}%</span>`;
+  return A.skill.trim() ? `<span class="text-sm text-amber-700">Belum dikenali. Tulis lebih spesifik atau pilih salah satu jalur di bawah.</span>` : `<span class="text-sm text-slate-500">Ketik keahlianmu dengan bahasamu sendiri.</span>`;
+}
+const updDetect = () => { const el = $('#det'); if (el) el.innerHTML = detHTML(); };
+
+function obProfile() {
+  return `<section class="${CARD} p-6 fade-up">
+    <h2 class="text-xl font-bold text-navy-950">Profil dasar</h2><p class="mt-1 text-sm text-slate-500">Data ini dipakai AI untuk menyusun soal dan mencocokkan pekerjaan.</p>
+    <div class="mt-6 grid gap-4 sm:grid-cols-2">
+      ${field('Nama lengkap', `<input class="${INP}" value="${esc(A.name)}" oninput="A.name=this.value" placeholder="Contoh: Rizky Ananda" autocomplete="name">`)}
+      ${field('Kota', `<input class="${INP}" value="${esc(A.city)}" oninput="A.city=this.value" placeholder="Contoh: Malang" autocomplete="address-level2">`)}
+    </div>
+    <div class="mt-4">
+      ${field('Keahlian utama', `<div class="relative"><span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${ic('search','h-4 w-4')}</span><input id="skill" class="${INP} pl-9" value="${esc(A.skill)}" oninput="A.skill=this.value;updDetect()" placeholder="Contoh: Frontend Developer, desain poster Canva"></div>`)}
+      <div id="det" class="mt-2 min-h-[24px]" aria-live="polite">${detHTML()}</div>
+      <div class="mt-3 flex flex-wrap gap-2">${Object.entries(TRACKS).map(([k, t]) => `<button type="button" onclick="A.skill='${t.name}';$('#skill').value=A.skill;updDetect()" class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-navy-300 hover:text-navy-900">${ic(t.icon,'h-3.5 w-3.5')}${t.name}</button>`).join('')}</div>
+    </div>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      ${field('Pengalaman berbayar', `<select class="${INP}" onchange="A.claim=this.value">${CLAIMS.map(c => `<option ${c === A.claim ? 'selected' : ''}>${c}</option>`).join('')}</select>`)}
+      ${field('Tarif minimum per proyek', `<div class="relative"><span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">Rp</span><input type="number" min="25000" step="25000" class="${INP} pl-10" value="${A.rate}" oninput="A.rate=+this.value"></div>`)}
+    </div>
+    <div class="mt-4">${field('Ceritakan yang bisa kamu kerjakan', `<textarea rows="3" class="${INP}" oninput="A.bio=this.value" placeholder="Contoh: Bisa bikin landing page responsif pakai React dan Tailwind, pernah membuat web organisasi kampus.">${esc(A.bio)}</textarea>`)}<p class="mt-1.5 text-xs text-slate-500">Opsional. AI memakai cerita ini untuk menandai kemampuan spesifik di profilmu.</p></div>
+    <div class="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+      <p class="inline-flex items-center gap-1.5 text-xs text-slate-500">${ic('lock','h-3.5 w-3.5')} Jawaban asesmen hanya dipakai untuk penilaian.</p>
+      <button class="${btn('acc')}" onclick="startGenerate()">${ic('sparkles','h-4 w-4')} Susun asesmen dengan AI</button>
+    </div>
+  </section>`;
+}
+
+function startGenerate() {
+  if (!A.name.trim()) return toast('Isi nama lengkap dulu.');
+  if (!(A.rate >= 25000)) return toast('Tarif minimum paling sedikit Rp 25.000.');
+  const d = detectTrack(A.skill);
+  if (!d) return toast('Keahlian belum dikenali. Pilih salah satu jalur yang tersedia.');
+  const tr = TRACKS[d.key], pool = QB.filter(q => q.track === d.key).length;
+  Object.assign(A, { track:d.key, conf:d.conf, step:2, gen:[], gi:0, genDone:false, asked:[], seen:[], answers:[], result:null, sel:null, diff:CLAIMS.indexOf(A.claim) + 1, showJson:false });
+  A.lines = [`Menganalisis input "${A.skill}"`, `Jalur terdeteksi: ${tr.name} (keyakinan ${A.conf.toFixed(2)})`, `Memetakan ${tr.comps.length} kompetensi: ${tr.comps.join(', ')}`,
+             `Level awal dari klaim pengalaman: ${DIFF[A.diff]}`, `Menyusun ${TEST_LEN} soal adaptif dari bank ${pool} item`, `Mengacak urutan pilihan jawaban`, `Blueprint asesmen siap`];
+  render(); scrollTo(0, 0);
+}
+function genTick() {
+  T.gen = null;
+  if (route() !== 'onboarding' || A.step !== 2 || A.genDone) return;
+  A.gen.push(A.lines[A.gi++]);
+  const el = $('#genlog'); if (el) el.innerHTML = genLogHTML();
+  if (A.gi < A.lines.length) T.gen = setTimeout(genTick, 480);
+  else { A.genDone = true; T.gen = setTimeout(() => { T.gen = null; if (route() === 'onboarding') render(); }, 350); }
+}
+const genLogHTML = () => A.gen.map(l => `<div class="fade-up"><span class="text-emerald-400">›</span> ${esc(l)}</div>`).join('') + (A.genDone ? '' : '<div class="caret text-slate-500">&nbsp;</div>');
+
+function obGenerate() {
+  const tr = TRACKS[A.track];
+  return `<section class="${CARD} p-6">
+    <div class="flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">${ic('sparkles')}</span><div><h2 class="text-xl font-bold text-navy-950">AI menyusun asesmen</h2><p class="text-sm text-slate-500">Jalur ${tr.name}</p></div></div>
+    <div class="mt-5 rounded-xl bg-navy-950 p-4 font-mono text-[13px] leading-6 text-slate-300" aria-live="polite"><div id="genlog">${genLogHTML()}</div></div>
+    ${A.genDone ? `<div class="mt-6 fade-up">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Blueprint asesmen</h3>
+      <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">${[['Soal', TEST_LEN], ['Waktu', QTIME + ' dtk/soal'], ['Mode', 'Adaptif'], ['Lulus', '≥ ' + PASS]].map(([l, v]) => `<div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-500">${l}</p><p class="mt-0.5 font-bold text-navy-950">${v}</p></div>`).join('')}</div>
+      <p class="mt-5 text-sm font-semibold text-navy-900">Kompetensi yang diuji</p>
+      <div class="mt-2 flex flex-wrap gap-2">${tr.comps.map(c => `<span class="rounded-full bg-navy-50 px-3 py-1 text-xs font-semibold text-navy-700">${c}</span>`).join('')}</div>
+      <ul class="mt-5 space-y-2 text-sm text-slate-600">${['Soal muncul satu per satu dan jawaban tidak bisa diubah.', 'Jawaban benar menaikkan tingkat kesulitan, jawaban salah menurunkannya.', 'Waktu habis dihitung sebagai jawaban kosong.'].map(checkLi).join('')}</ul>
+      <div class="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-between"><button class="${btn('ghost')}" onclick="A.step=1;render()">Ubah profil</button><button class="${btn('acc')}" onclick="startTest()">Mulai asesmen ${ic('arrowR','h-4 w-4')}</button></div>
+    </div>` : ''}
+  </section>`;
+}
+
+function startTest() { A.step = 3; A.t0 = Date.now(); nextQ(); render(); scrollTo(0, 0); }
+function nextQ() { // pilih soal terdekat dengan level saat ini, utamakan kompetensi yang belum diuji
+  const cov = new Set(A.answers.map(a => a.comp));
+  const pool = QB.filter(q => q.track === A.track && !A.asked.includes(q.id))
+    .map(q => [q, Math.abs(q.d - A.diff) * 2 + (cov.has(q.comp) ? 1 : 0) + (A.seen.includes(q.id) ? 3 : 0) + Math.random() * .6])
+    .sort((a, b) => a[1] - b[1]);
+  A.cur = pool[0][0]; A.asked.push(A.cur.id); A.order = shuffle([0, 1, 2, 3]); A.sel = null; A.left = QTIME; A.qStart = Date.now();
+  startTimer();
+}
+function startTimer() {
+  clearInterval(T.q);
+  T.q = setInterval(() => {
+    if (route() !== 'onboarding' || A.step !== 3) { stopTimer(); return; }
+    A.left = Math.max(0, A.left - 1);
+    const t = $('#tmr'), b = $('#tbar');
+    if (t) t.textContent = A.left + ' dtk';
+    if (b) { b.style.width = (A.left / QTIME * 100) + '%'; b.style.backgroundColor = A.left <= 10 ? '#D97706' : ''; }
+    if (A.left <= 0) submitAns(true);
+  }, 1000);
+}
+function stopTimer() { clearInterval(T.q); T.q = null; clearTimeout(T.gen); T.gen = null; }
+
+function submitAns(timeout) {
+  if (!timeout && A.sel == null) return;
+  clearInterval(T.q); T.q = null;
+  const q = A.cur, chosen = timeout ? null : A.sel, ok = chosen === q.a;
+  A.answers.push({ id:q.id, comp:q.comp, d:q.d, chosen, ok, secs:Math.round((Date.now() - A.qStart) / 1000), timeout:!!timeout });
+  A.diff = ok ? Math.min(3, q.d + 1) : Math.max(1, q.d - 1);
+  if (A.answers.length >= TEST_LEN) finish(); else nextQ();
+  render();
+  if (timeout) toast('Waktu habis, soal dihitung kosong.');
+}
+const levelOf = s => s >= 88 ? 'Mahir' : s >= 75 ? 'Menengah' : s >= PASS ? 'Pemula' : 'Belum lolos';
+function finish() {
+  stopTimer();
+  const ans = A.answers, earned = ans.reduce((s, a) => s + (a.ok ? a.d : 0), 0), tot = ans.reduce((s, a) => s + a.d, 0);
+  const score = Math.round(earned / tot * 100), comps = {};
+  ans.forEach(a => { comps[a.comp] = comps[a.comp] || { n:0, ok:0 }; comps[a.comp].n++; if (a.ok) comps[a.comp].ok++; });
+  const compPct = Object.fromEntries(Object.entries(comps).map(([k, v]) => [k, Math.round(v.ok / v.n * 100)]));
+  A.result = { score, level:levelOf(score), passed:score >= PASS, compPct, earned, tot, correct:ans.filter(a => a.ok).length,
+               secs:Math.round((Date.now() - A.t0) / 1000), session:'as_' + Date.now().toString(36), date:new Date().toISOString() };
+  A.step = 4;
+  if (A.result.passed) saveYou();
+}
+function saveYou() {
+  const r = A.result;
+  let tags = tagsFrom((A.skill + ' ' + A.bio).toLowerCase()).filter(t => TAGS[t].t === A.track);
+  if (!tags.length) tags = DEFAULT_TAGS[A.track];
+  const you = { id:'tal_you', isYou:true, name:A.name.trim(), city:A.city.trim() || 'Indonesia', track:A.track, tracks:[A.track], tags,
+    rate:A.rate, available:true, availability:'Tersedia', projects:0, onTime:null, av:1,
+    assessment:{ score:r.score, level:r.level, session:r.session, date:r.date, comps:r.compPct } };
+  CANDS = [you, ...CANDS.filter(c => !c.isYou)];
+  try { localStorage.setItem(LS, JSON.stringify(you)); } catch (e) {}
+}
+function retake() {
+  Object.assign(A, { seen:[...A.seen, ...A.asked], asked:[], answers:[], result:null, showJson:false, diff:CLAIMS.indexOf(A.claim) + 1 });
+  startTest();
+}
+function seeMe() { const tr = A.track || (CANDS.find(c => c.isYou) || {}).track || 'frontend'; Object.assign(D, freshD(), { desc:EX.find(e => e.track === tr).text, pendingRun:true }); nav('dashboard'); }
+
+function obTest() {
+  const q = A.cur, n = A.answers.length + 1;
+  return `<section class="${CARD}">
+    <div class="border-b border-slate-100 p-5 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2"><span class="text-sm font-bold text-navy-950">Soal ${n} dari ${TEST_LEN}</span><span class="rounded-full bg-navy-50 px-2.5 py-0.5 text-xs font-semibold text-navy-700">${q.comp}</span>${diffBadge(q.d)}</div>
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-bold tabular-nums text-navy-900">${ic('clock','h-4 w-4')}<span id="tmr">${A.left} dtk</span></span>
+      </div>
+      <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100"><div id="tbar" class="h-full rounded-full bg-emerald-500 transition-[width] duration-1000 ease-linear" style="width:${A.left / QTIME * 100}%;${A.left <= 10 ? 'background-color:#D97706' : ''}"></div></div>
+    </div>
+    <div class="p-5 sm:p-6">
+      <p class="text-lg font-semibold leading-relaxed text-navy-950" id="qtext">${esc(q.q)}</p>
+      ${q.code ? `<pre class="mt-4 overflow-x-auto rounded-xl bg-navy-950 p-4 font-mono text-[13px] leading-relaxed text-slate-200">${esc(q.code)}</pre>` : ''}
+      <div class="mt-5 grid gap-2.5" role="radiogroup" aria-labelledby="qtext">${A.order.map((oi, k) => { const on = A.sel === oi;
+        return `<button role="radio" aria-checked="${on}" onclick="A.sel=${oi};render()" class="group flex w-full items-start gap-3 rounded-xl border px-4 py-3.5 text-left text-[15px] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500 ${on ? 'border-navy-900 bg-navy-50 ring-2 ring-navy-900/10' : 'border-slate-200 bg-white hover:border-navy-300 hover:bg-slate-50'}"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-bold ${on ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-navy-100'}">${'ABCD'[k]}</span><span class="pt-0.5 text-slate-700">${esc(q.o[oi])}</span></button>`; }).join('')}</div>
+      <div class="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><p class="text-xs text-slate-500">Jawaban tidak bisa diubah setelah dikirim.</p><button class="${btn('pri')}" ${A.sel == null ? 'disabled' : ''} onclick="submitAns(false)">${n === TEST_LEN ? 'Kirim & lihat hasil' : 'Kirim jawaban'} ${ic('arrowR','h-4 w-4')}</button></div>
+    </div>
+  </section>`;
+}
+
+function sessionJSON() {
+  const r = A.result, tr = TRACKS[A.track];
+  return {
+    session_id:r.session, talent:{ name:A.name.trim(), city:A.city.trim(), claimed_experience:A.claim, min_rate_idr:A.rate },
+    input_skill:A.skill, detected_track:{ id:A.track, label:tr.name, confidence:+A.conf.toFixed(2) },
+    blueprint:{ competencies:tr.comps, n_items:TEST_LEN, time_per_item_sec:QTIME, adaptive:true, start_difficulty:CLAIMS.indexOf(A.claim) + 1, pass_score:PASS },
+    items:A.answers.map((a, i) => ({ no:i + 1, item_id:a.id, competency:a.comp, difficulty:a.d, correct:a.ok, time_sec:a.secs, timed_out:a.timeout })),
+    result:{ score:r.score, level:r.level, passed:r.passed, weighted:{ earned:r.earned, possible:r.tot }, competency_scores:r.compPct, duration_sec:r.secs },
+    completed_at:r.date
+  };
+}
+
+function obResult() {
+  const r = A.result, tr = TRACKS[A.track], ok = r.passed;
+  return `<div class="space-y-6 fade-up">
+    <section class="${CARD} p-6">
+      <div class="flex flex-col items-center gap-6 sm:flex-row">
+        ${ring(r.score, ok ? '#059669' : '#D97706', 'h-32 w-32', 'h-[104px] w-[104px]', 'text-4xl')}
+        <div class="text-center sm:text-left">
+          <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${ok ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'}">${ic(ok ? 'shieldCheck' : 'alert', 'h-3.5 w-3.5')} ${ok ? 'Lulus · ' + r.level : 'Belum lolos'}</span>
+          <h2 class="mt-3 text-2xl font-extrabold text-navy-950">${ok ? `Profilmu aktif, ${esc(first(A.name))}.` : 'Sedikit lagi.'}</h2>
+          <p class="mt-1.5 text-slate-600">${ok ? `Kamu terverifikasi sebagai ${tr.name} level ${r.level}. Profilmu sekarang muncul di hasil pencocokan klien.` : `Skor minimum ${PASS}. Pelajari pembahasan di bawah, lalu ulangi dengan kombinasi soal berbeda.`}</p>
+        </div>
+      </div>
+      <dl class="mt-6 grid grid-cols-3 gap-3">${[['Jawaban benar', `${r.correct}/${TEST_LEN}`], ['Bobot diraih', `${r.earned}/${r.tot}`], ['Durasi', mmss(r.secs)]].map(([l, v]) => `<div class="rounded-xl bg-slate-50 p-3"><dt class="text-xs text-slate-500">${l}</dt><dd class="mt-0.5 text-lg font-bold tabular-nums text-navy-950">${v}</dd></div>`).join('')}</dl>
+      <div class="mt-6 flex flex-col gap-3 sm:flex-row">${ok ? `<button class="${btn('acc')}" onclick="seeMe()">Lihat profilku di Dashboard Klien ${ic('arrowR','h-4 w-4')}</button><button class="${btn('out')}" onclick="nav('talenta')">Dashboard Talenta</button>` : `<button class="${btn('acc')}" onclick="retake()">${ic('refresh','h-4 w-4')} Ulangi asesmen</button>`}<button class="${btn('out')}" onclick="A.showJson=!A.showJson;render()">${ic('braces','h-4 w-4')} ${A.showJson ? 'Sembunyikan' : 'Lihat'} data sesi (JSON)</button></div>
+      ${A.showJson ? jsonBox(sessionJSON()) : ''}
+      ${!ok ? '<p class="mt-3 text-xs text-slate-500">Di versi produksi, asesmen ulang baru bisa dilakukan setelah 7 hari.</p>' : ''}
+    </section>
+    <section class="${CARD} p-6"><h3 class="font-bold text-navy-950">Rincian kompetensi</h3><p class="mt-1 text-sm text-slate-500">Persentase jawaban benar per kompetensi yang muncul di asesmenmu.</p>
+      <div class="mt-5 space-y-4">${tr.comps.map(k => { const v = r.compPct[k]; return `<div><div class="flex justify-between text-sm"><span class="font-semibold text-navy-900">${k}</span><span class="font-bold tabular-nums ${v == null ? 'text-slate-400' : 'text-navy-950'}">${v == null ? 'Belum diuji' : v + '%'}</span></div><div class="mt-1.5">${bar(v || 0, v >= 75 ? 'bg-emerald-500' : v >= 50 ? 'bg-sky-600' : 'bg-amber-500')}</div></div>`; }).join('')}</div>
+    </section>
+    <section class="${CARD} p-6"><h3 class="font-bold text-navy-950">Pembahasan</h3>
+      <div class="mt-4 space-y-3">${A.answers.map((a, i) => { const q = QB.find(x => x.id === a.id);
+        return `<details class="rounded-xl border ${a.ok ? 'border-slate-200' : 'border-rose-200 bg-rose-50/40'}" ${a.ok ? '' : 'open'}><summary class="flex cursor-pointer list-none items-start gap-3 p-4"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-full ${a.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${ic(a.ok ? 'check' : 'x', 'h-4 w-4')}</span><span class="flex-1 text-sm font-semibold text-navy-950">${i + 1}. ${esc(q.q)}</span><span class="hidden sm:block">${diffBadge(q.d)}</span></summary>
+          <div class="space-y-2 px-4 pb-4 text-sm sm:pl-14"><p><span class="text-slate-500">Jawabanmu:</span> <span class="font-semibold ${a.ok ? 'text-emerald-700' : 'text-rose-700'}">${a.chosen == null ? '(waktu habis)' : esc(q.o[a.chosen])}</span></p>${a.ok ? '' : `<p><span class="text-slate-500">Jawaban tepat:</span> <span class="font-semibold text-emerald-700">${esc(q.o[q.a])}</span></p>`}<p class="leading-relaxed text-slate-600">${esc(q.why)}</p></div></details>`; }).join('')}</div>
+    </section>
+  </div>`;
+}
+
+function miniProfile(c) {
+  const tr = TRACKS[c.track], comps = Object.entries(c.assessment.comps).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return `<div class="mt-4 rounded-xl border border-slate-200 p-4"><div class="flex items-center gap-3">${avatar(c, 'h-11 w-11 text-sm')}<div class="min-w-0"><p class="truncate font-bold text-navy-950">${esc(c.name)}</p><p class="truncate text-xs text-slate-500">${tr.name} · ${esc(c.city)}</p></div></div>
+    <span class="mt-3 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">${ic('shieldCheck','h-3.5 w-3.5')} Asesmen ${c.assessment.score} · ${c.assessment.level}</span>
+    <div class="mt-3 flex flex-wrap gap-1.5">${c.tags.map(t => `<span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">${esc(t)}</span>`).join('')}</div>
+    <div class="mt-4 space-y-2.5">${comps.map(([k, v]) => `<div><div class="flex justify-between text-xs"><span class="text-slate-600">${k}</span><b class="text-navy-900">${v}%</b></div><div class="mt-1">${bar(v, 'bg-emerald-500')}</div></div>`).join('')}</div>
+    <p class="mt-4 border-t border-slate-100 pt-3 text-sm"><span class="text-slate-500">Tarif mulai</span> <b class="text-navy-950">${rp(c.rate)}</b></p></div>`;
+}
+
+function obSide() {
+  if (A.step === 3) {
+    return `<div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Jejak adaptif</h3><p class="mt-1 text-xs text-slate-500">Tinggi batang menunjukkan tingkat kesulitan tiap soal.</p>
+      <div class="mt-4 flex h-28 items-end gap-2">${Array.from({ length:TEST_LEN }, (_, i) => { const a = A.answers[i], cur = i === A.answers.length, d = a ? a.d : cur ? A.cur.d : 0;
+        return `<div class="flex flex-1 flex-col items-center justify-end gap-1.5 self-stretch"><div class="w-full rounded-md ${a ? 'bg-navy-700' : cur ? 'bg-emerald-500' : 'bg-slate-100'}" style="height:${d ? d * 26 : 8}px"></div><span class="text-[11px] font-semibold ${cur ? 'text-emerald-700' : 'text-slate-400'}">${i + 1}</span></div>`; }).join('')}</div>
+      <div class="mt-3 flex justify-between text-[11px] text-slate-400"><span>Mudah</span><span>Sedang</span><span>Sulit</span></div></div>
+      <div class="${CARD} p-5 text-sm text-slate-600"><h3 class="text-sm font-bold text-navy-950">Pintasan keyboard</h3><p class="mt-2 leading-7">Tekan <kbd>1</kbd>–<kbd>4</kbd> untuk memilih jawaban dan <kbd>Enter</kbd> untuk mengirim.</p></div>`;
+  }
+  if (A.step === 4) {
+    const r = A.result;
+    if (r.passed) return `<div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Profilmu di mata klien</h3><p class="mt-1 text-xs text-slate-500">Begini kartu profilmu tampil di dashboard pemberi kerja.</p>${miniProfile(CANDS.find(c => c.isYou))}</div>`;
+    const weak = TRACKS[A.track].comps.map(k => [k, r.compPct[k]]).filter(([, v]) => v == null || v < 100).sort((a, b) => (a[1] ?? 101) - (b[1] ?? 101));
+    return `<div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Fokus belajar</h3><p class="mt-1 text-xs text-slate-500">Diurutkan dari kompetensi dengan skor terendah.</p><ol class="mt-4 space-y-2 text-sm">${weak.map(([k, v], i) => `<li class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"><span><b class="mr-2 text-slate-400">${i + 1}</b>${k}</span><span class="text-xs font-semibold ${v == null ? 'text-slate-400' : 'text-amber-700'}">${v == null ? 'belum diuji' : v + '%'}</span></li>`).join('')}</ol></div>`;
+  }
+  return `<div class="${CARD} p-5"><span class="grid h-10 w-10 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic('shieldCheck')}</span><h3 class="mt-4 font-bold text-navy-950">Kenapa ada asesmen?</h3>
+      <ul class="mt-3 space-y-2.5 text-sm text-slate-600">${['Klien melihat bukti kemampuan, bukan sekadar klaim di bio.', 'Kamu tidak perlu portofolio untuk pekerjaan pertama.', 'Skor per kompetensi menunjukkan apa yang perlu ditingkatkan.'].map(checkLi).join('')}</ul></div>
+    <div class="rounded-2xl border border-navy-100 bg-navy-50/60 p-5 text-sm"><p class="font-semibold text-navy-900">Aturan asesmen</p><dl class="mt-3 grid grid-cols-2 gap-3">${[['Jumlah soal', TEST_LEN], ['Waktu', QTIME + ' dtk/soal'], ['Nilai lulus', '≥ ' + PASS], ['Ulang', 'setelah 7 hari']].map(([l, v]) => `<div><dt class="text-xs text-slate-500">${l}</dt><dd class="font-bold text-navy-950">${v}</dd></div>`).join('')}</dl></div>`;
+}
+
+/* =====================================================================
+   11. DASHBOARD KLIEN: AI SMART MATCHING
+   ===================================================================== */
+function viewDashboard() {
+  const n = CANDS.length, avg = Math.round(CANDS.reduce((s, c) => s + c.assessment.score, 0) / n);
+  const stat = (l, v, i) => `<div class="${CARD} flex items-center gap-4 p-4"><span class="grid h-11 w-11 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic(i)}</span><div><p class="text-xs font-semibold text-slate-500">${l}</p><p class="text-2xl font-extrabold tabular-nums text-navy-950">${v}</p></div></div>`;
+  return `<div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+    <div>${eyebrow('Untuk pemberi kerja')}<h1 class="mt-1 text-3xl font-extrabold tracking-tight text-navy-950 sm:text-4xl">AI Smart Matching</h1><p class="mt-2 max-w-2xl text-slate-600">Ceritakan masalahmu dengan bahasa sehari-hari. Rintisa menerjemahkannya menjadi kebutuhan kemampuan, lalu mengurutkan talenta yang sudah lolos asesmen.</p></div>
+    <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">${stat('Talenta terverifikasi', n, 'users')}${stat('Rata-rata skor asesmen', avg, 'trend')}${stat('Jalur keahlian', Object.keys(TRACKS).length, 'layers')}</div>
+    <div class="mt-8 grid gap-6 lg:grid-cols-[360px_1fr]">
+      <aside class="space-y-4 lg:sticky lg:top-24 lg:self-start">${dashForm()}${dashFilters()}</aside>
+      <section id="results" class="min-w-0 scroll-mt-20" aria-live="polite">${resultsHTML()}</section>
+    </div>
+  </div>`;
+}
+
+function dashForm() {
+  return `<div class="${CARD} p-5">
+    <label for="desc" class="font-bold text-navy-950">Ceritakan masalahmu</label><p class="mt-1 text-xs text-slate-500">Tidak perlu istilah teknis.</p>
+    <textarea id="desc" rows="5" class="${INP} mt-3" placeholder="Contoh: Toko kue saya butuh website untuk menampilkan menu dan menerima pesanan." oninput="D.desc=this.value">${esc(D.desc)}</textarea>
+    <p class="mt-3 text-xs font-semibold text-slate-500">Coba contoh</p>
+    <div class="mt-1.5 flex flex-wrap gap-1.5">${EX.map((e, i) => `<button type="button" onclick="useEx(${i})" class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-navy-50 hover:text-navy-900">${e.label}</button>`).join('')}</div>
+    <div class="mt-5"><div class="flex items-center justify-between"><label for="bud" class="text-sm font-semibold text-navy-900">Budget</label><output id="budv" class="text-sm font-bold tabular-nums text-navy-900">${rp(D.budget)}</output></div>
+      <input id="bud" type="range" min="25000" max="2000000" step="25000" value="${D.budget}" class="mt-2 w-full accent-emerald-600" oninput="D.budget=+this.value;$('#budv').textContent=rp(D.budget);if(D.need&&!D.loading)renderResults()">
+      <div class="mt-1 flex justify-between text-[11px] text-slate-400"><span>Rp 25 rb</span><span>Rp 2 jt</span></div></div>
+    <label class="mt-4 block"><span class="mb-1.5 block text-sm font-semibold text-navy-900">Tenggat</span><select class="${INP}" onchange="D.days=+this.value;if(D.need&&!D.loading){D.need=analyzeNeed();renderResults()}">${[3, 7, 14, 30].map(d => `<option value="${d}" ${d === D.days ? 'selected' : ''}>${d} hari</option>`).join('')}</select></label>
+    <button class="${btn('acc')} mt-5 w-full" onclick="runMatch()">${ic('sparkles','h-4 w-4')} Cari dengan AI</button>
+  </div>`;
+}
+function dashFilters() {
+  return `<div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Filter hasil</h3>
+    <div class="mt-4"><div class="flex justify-between text-sm"><label for="minS" class="font-semibold text-navy-900">Skor asesmen minimum</label><output id="minSv" class="font-bold tabular-nums text-navy-900">${D.minScore}</output></div>
+      <input id="minS" type="range" min="60" max="95" step="5" value="${D.minScore}" class="mt-2 w-full accent-navy-900" oninput="D.minScore=+this.value;$('#minSv').textContent=this.value;if(D.need&&!D.loading)renderResults()"></div>
+    <label class="mt-4 flex cursor-pointer items-center gap-2.5 text-sm font-semibold text-navy-900"><input type="checkbox" class="h-4 w-4 rounded accent-emerald-600" ${D.onlyAvail ? 'checked' : ''} onchange="D.onlyAvail=this.checked;if(D.need&&!D.loading)renderResults()"> Hanya yang tersedia minggu ini</label>
+    <label class="mt-4 block"><span class="mb-1.5 block text-sm font-semibold text-navy-900">Urutkan</span><select class="${INP}" onchange="D.sort=this.value;if(D.need&&!D.loading)renderResults()">${[['match','Match Score tertinggi'],['assess','Skor asesmen tertinggi'],['rate','Tarif terendah']].map(([v, l]) => `<option value="${v}" ${D.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+  </div>`;
+}
+
+function useEx(i) { D.desc = EX[i].text; const t = $('#desc'); if (t) t.value = D.desc; runMatch(); }
+function runMatch() {
+  if (D.desc.trim().length < 12) return toast('Tulis kebutuhanmu minimal satu kalimat.');
+  Object.assign(D, { manualTrack:null, add:[], rm:[], loading:true, reqId:'mt_' + Date.now().toString(36) });
+  renderResults();
+  if (innerWidth < 1024) $('#results')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  clearTimeout(T.match);
+  T.match = setTimeout(() => { D.need = analyzeNeed(); D.loading = false; if (route() === 'dashboard') renderResults(); }, 900);
+}
+const renderResults = () => { const el = $('#results'); if (el) el.innerHTML = resultsHTML(); };
+function setManual(k) { D.manualTrack = k; D.need = analyzeNeed(); renderResults(); }
+function rmTag(i) { const k = TAG_KEYS[i]; D.add = D.add.filter(x => x !== k); if (!D.rm.includes(k)) D.rm.push(k); D.need = analyzeNeed(); renderResults(); }
+function addTag(v) { if (v === '') return; const k = TAG_KEYS[+v]; D.rm = D.rm.filter(x => x !== k); if (!D.add.includes(k)) D.add.push(k); D.need = analyzeNeed(); renderResults(); }
+
+function resultsHTML() {
+  if (D.loading) return `<div class="space-y-4"><div class="${CARD} flex items-center gap-3 p-5"><span class="grid h-10 w-10 animate-pulse place-items-center rounded-xl bg-emerald-50 text-emerald-700">${ic('sparkles')}</span><div><p class="font-bold text-navy-950">AI menganalisis kebutuhanmu…</p><p class="text-sm text-slate-500">Mengekstrak kemampuan, menilai urgensi, lalu menghitung skor ${CANDS.length} talenta.</p></div></div>${[0, 1, 2].map(() => `<div class="${CARD} p-5"><div class="flex gap-4"><div class="shimmer h-12 w-12 rounded-xl"></div><div class="flex-1 space-y-2"><div class="shimmer h-4 w-1/3 rounded"></div><div class="shimmer h-3 w-1/2 rounded"></div></div><div class="shimmer h-16 w-16 rounded-full"></div></div><div class="shimmer mt-4 h-20 rounded-xl"></div></div>`).join('')}</div>`;
+  if (!D.need) return `<div class="grid place-items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center">
+      <div class="relative h-24 w-40" aria-hidden="true"><div class="absolute left-2 top-4 h-16 w-28 -rotate-6 rounded-xl border border-slate-200 bg-white shadow-soft"></div><div class="absolute right-2 top-0 flex h-16 w-28 rotate-3 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-lift"><div class="h-7 w-7 rounded-lg bg-emerald-100"></div><div class="flex-1 space-y-1.5"><div class="h-1.5 rounded bg-slate-200"></div><div class="h-1.5 w-2/3 rounded bg-slate-200"></div></div></div><div class="absolute bottom-0 right-8 grid h-10 w-10 place-items-center rounded-full bg-navy-900 text-xs font-bold text-white">92</div></div>
+      <h2 class="mt-6 text-lg font-bold text-navy-950">Hasil kecocokan muncul di sini</h2><p class="mt-1 max-w-sm text-sm text-slate-500">Tulis masalahmu di panel kiri, atau coba salah satu contoh untuk melihat cara AI mengurutkan ${CANDS.length} talenta terverifikasi.</p>
+      <button onclick="useEx(0)" class="${btn('out','sm')} mt-5">Coba contoh: landing page toko kue</button></div>`;
+  const need = D.need;
+  if (!need.track) return `<div class="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div class="flex gap-3"><span class="shrink-0 text-amber-600">${ic('alert')}</span><div><p class="font-bold text-amber-900">AI belum bisa memetakan kebutuhan ini</p><p class="mt-1 text-sm text-amber-800">Sebutkan jenis hasil yang kamu harapkan (misalnya website, logo, video, laporan Excel), atau pilih kategori secara manual.</p><div class="mt-3 flex flex-wrap gap-2">${Object.entries(TRACKS).map(([k, t]) => `<button onclick="setManual('${k}')" class="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100">${ic(t.icon,'h-3.5 w-3.5')}${t.name}</button>`).join('')}</div></div></div></div>`;
+
+  const all = CANDS.map(c => scoreCand(c, need));
+  const rel = all.filter(r => r.skill >= .35), low = all.filter(r => r.skill < .35);
+  const list = rel.filter(r => r.c.assessment.score >= D.minScore && (!D.onlyAvail || r.c.available));
+  list.sort(D.sort === 'assess' ? (a, b) => b.c.assessment.score - a.c.assessment.score : D.sort === 'rate' ? (a, b) => a.c.rate - b.c.rate : (a, b) => b.total - a.total);
+  const hidden = rel.length - list.length, tr = TRACKS[need.track];
+
+  return `<div class="${CARD} p-5 fade-up">
+      <div class="flex items-start justify-between gap-3"><div class="flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">${ic(tr.icon)}</span><div><p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Pemahaman AI</p><p class="font-bold text-navy-950">${tr.name}</p></div></div><span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">keyakinan ${Math.round(need.conf * 100)}%</span></div>
+      <p class="mt-4 text-xs font-semibold text-slate-500">Kemampuan yang dibutuhkan <span class="font-normal">· kurang tepat? hapus atau tambahkan</span></p>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5">${need.tags.map(t => `<span class="inline-flex items-center gap-1 rounded-full bg-navy-900 py-1 pl-3 pr-1.5 text-xs font-semibold text-white">${esc(t)}<button onclick="rmTag(${TAG_KEYS.indexOf(t)})" class="grid h-4 w-4 place-items-center rounded-full hover:bg-white/20" aria-label="Hapus ${esc(t)}">${ic('x','h-3 w-3')}</button></span>`).join('')}
+        <select onchange="addTag(this.value)" aria-label="Tambah kemampuan" class="rounded-full border border-dashed border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600"><option value="">+ Tambah</option>${TAG_KEYS.map((k, i) => need.tags.includes(k) ? '' : `<option value="${i}">${esc(k)}</option>`).join('')}</select></div>
+      <dl class="mt-4 grid gap-3 sm:grid-cols-3">${[['Kompleksitas', need.complexity], ['Urgensi', need.urgent ? 'Mendesak' : 'Normal'], ['Honor wajar', `${rp(need.fee[0])} – ${rp(need.fee[1])}`]].map(([l, v]) => `<div class="rounded-xl bg-slate-50 p-3"><dt class="text-xs text-slate-500">${l}</dt><dd class="mt-0.5 text-sm font-bold text-navy-950">${v}</dd></div>`).join('')}</dl>
+      ${D.budget < need.fee[0] ? `<p class="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800"><span class="shrink-0 text-amber-600">${ic('alert','h-4 w-4')}</span>Budget ${rp(D.budget)} di bawah kisaran honor wajar untuk pekerjaan ini. Talenta berpengalaman mungkin menolak undangan.</p>` : ''}
+    </div>
+    <div class="mt-6 flex flex-wrap items-center justify-between gap-3"><h2 class="text-lg font-bold text-navy-950">${list.length} kandidat terverifikasi cocok</h2><button class="${btn('out','sm')}" onclick="D.json=!D.json;renderResults()">${ic('braces','h-4 w-4')} ${D.json ? 'Tutup' : 'Lihat'} data di balik layar</button></div>
+    ${D.json ? `<div class="${CARD} mt-4 p-4 fade-up"><div class="flex flex-wrap items-center justify-between gap-2"><div class="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-semibold" role="tablist">${[['req', 'Request'], ['res', 'Response']].map(([k, l]) => `<button role="tab" aria-selected="${D.jsonTab === k}" class="rounded-md px-3 py-1.5 ${D.jsonTab === k ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500'}" onclick="D.jsonTab='${k}';renderResults()">${l}</button>`).join('')}</div><span class="text-xs text-slate-500">Simulasi kontrak API <span class="font-mono">POST /api/v1/match</span></span></div>${jsonBox(D.jsonTab === 'req' ? matchReq() : matchRes(need, list))}</div>` : ''}
+    <div class="mt-4 space-y-4">${list.length ? list.map(candCard).join('') : `<div class="${CARD} p-6 text-center text-sm text-slate-600">Tidak ada kandidat yang lolos filter. Turunkan skor minimum atau matikan "hanya yang tersedia".</div>`}</div>
+    ${hidden ? `<p class="mt-4 text-center text-xs text-slate-500">${hidden} kandidat relevan disembunyikan oleh filter.</p>` : ''}
+    ${low.length ? `<details class="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4"><summary class="cursor-pointer text-sm font-semibold text-slate-600">Kurang relevan untuk kebutuhan ini (${low.length})</summary><ul class="mt-3 grid gap-2 sm:grid-cols-2">${low.sort((a, b) => b.total - a.total).map(r => `<li class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span class="truncate">${esc(r.c.name)} <span class="text-xs text-slate-500">· ${TRACKS[r.c.track].name}</span></span><b class="tabular-nums text-slate-500">${r.total}</b></li>`).join('')}</ul></details>` : ''}`;
+}
+
+function candCard(r, i) {
+  const c = r.c, s = r.total;
+  const F = [['Kecocokan skill', r.skill, W.skill], ['Skor asesmen', r.assess, W.assess], ['Kesesuaian budget', r.budget, W.budget], ['Reliabilitas', r.rel, W.rel]];
+  return `<article class="fade-up rounded-2xl border ${c.isYou ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'} bg-white p-5 shadow-soft transition hover:shadow-lift" style="animation-delay:${i * 60}ms">
+    <div class="flex items-start gap-4">
+      ${avatar(c)}
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-navy-950">${esc(c.name)}</h3>${c.isYou ? '<span class="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white">Kamu</span>' : ''}${i === 0 && D.sort === 'match' ? '<span class="rounded-full bg-navy-900 px-2 py-0.5 text-[11px] font-bold text-white">Paling cocok</span>' : ''}</div>
+        <p class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500"><span>${TRACKS[c.track].name}</span><span class="inline-flex items-center gap-1">${ic('pin','h-3.5 w-3.5')}${esc(c.city)}</span><span><b class="text-navy-900">${rp(c.rate)}</b>/proyek</span></p>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">${ic('shieldCheck','h-3.5 w-3.5')} Asesmen ${c.assessment.score} · ${c.assessment.level}</span>
+          <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${c.available ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-200' : 'bg-slate-100 text-slate-600'}">${ic('clock','h-3.5 w-3.5')}${esc(c.availability)}</span>
+          <span class="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">${c.projects ? `${c.projects} proyek · ${c.onTime}% tepat waktu` : 'Talenta baru'}</span>
+        </div>
+      </div>
+      <div class="text-center">${ring(s, scoreCol(s))}<p class="mt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Match</p></div>
+    </div>
+    <div class="mt-4 flex flex-wrap gap-1.5">${c.tags.map(t => `<span class="rounded-md px-2 py-0.5 text-xs font-medium ${r.have.includes(t) ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-600'}">${esc(t)}</span>`).join('')}</div>
+    <div class="mt-4 grid gap-x-6 gap-y-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">${F.map(([l, v, w]) => `<div><div class="flex justify-between text-xs"><span class="font-semibold text-slate-600">${l} <span class="font-normal text-slate-400">× ${w.toFixed(2)}</span></span><span class="font-bold tabular-nums text-navy-900">${Math.round(v * 100)}</span></div><div class="mt-1.5">${bar(v * 100)}</div></div>`).join('')}</div>
+    <ul class="mt-4 space-y-1.5 text-sm">${r.why.map(w => `<li class="flex gap-2 text-slate-600"><span class="mt-0.5 shrink-0 text-emerald-600">${ic('check','h-4 w-4')}</span>${esc(w)}</li>`).join('')}${r.warn.map(w => `<li class="flex gap-2 text-amber-800"><span class="mt-0.5 shrink-0 text-amber-600">${ic('alert','h-4 w-4')}</span>${esc(w)}</li>`).join('')}</ul>
+    <div class="mt-5 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end"><button class="${btn('out','sm')}" onclick="showAssess('${c.id}')">${ic('eye','h-4 w-4')} Lihat hasil asesmen</button><button class="${btn('pri','sm')}" onclick="invite('${c.id}')">${ic('send','h-4 w-4')} Undang ke proyek</button></div>
+  </article>`;
+}
+
+function matchReq() {
+  return { endpoint:'POST /api/v1/match', client_id:'cli_demo_01', problem_statement:D.desc.trim(), budget_idr:D.budget, deadline_days:D.days,
+           filters:{ min_assessment_score:D.minScore, only_available:D.onlyAvail }, sort:D.sort, skill_overrides:{ added:D.add, removed:D.rm } };
+}
+function matchRes(need, list) {
+  const f = x => +x.toFixed(2);
+  return { request_id:D.reqId,
+    need_analysis:{ category:need.track, category_label:TRACKS[need.track].name, confidence:f(need.conf), required_skills:need.tags, matched_keywords:need.kws,
+                    urgency:need.urgent ? 'high' : 'normal', complexity:need.complexity, fair_fee_range_idr:need.fee, budget_below_fair_range:D.budget < need.fee[0] },
+    weights:{ skill_fit:W.skill, assessment:W.assess, budget_fit:W.budget, reliability:W.rel },
+    total_candidates:list.length,
+    candidates:list.slice(0, 3).map((r, i) => ({ rank:i + 1, talent_id:r.c.id, name:r.c.name, match_score:r.total,
+      breakdown:{ skill_fit:f(r.skill), assessment:f(r.assess), budget_fit:f(r.budget), reliability:f(r.rel) },
+      matched_skills:r.have, missing_skills:r.miss,
+      verified_assessment:{ track:r.c.track, score:r.c.assessment.score, level:r.c.assessment.level, session_id:r.c.assessment.session },
+      reasons:r.why, warnings:r.warn })) };
+}
+
+function showAssess(id) {
+  const c = CANDS.find(x => x.id === id), a = c.assessment, tr = TRACKS[c.track];
+  openModal(`<div class="flex items-start gap-4 pr-8">${avatar(c)}<div class="min-w-0 flex-1"><h2 class="text-lg font-bold text-navy-950">${esc(c.name)}</h2><p class="text-sm text-slate-500">${tr.name} · ${esc(c.city)}</p></div>${ring(a.score, '#059669')}</div>
+    <dl class="mt-5 grid grid-cols-3 gap-2">${[['Level', a.level], ['Format', TEST_LEN + ' soal adaptif'], ['Tanggal', fmtDate(a.date)]].map(([l, v]) => `<div class="rounded-xl bg-slate-50 p-3"><dt class="text-xs text-slate-500">${l}</dt><dd class="mt-0.5 text-sm font-bold text-navy-950">${v}</dd></div>`).join('')}</dl>
+    <h3 class="mt-6 text-sm font-bold text-navy-950">Skor per kompetensi</h3>
+    <div class="mt-3 space-y-3">${tr.comps.map(k => { const v = a.comps[k]; return `<div><div class="flex justify-between text-sm"><span class="text-slate-600">${k}</span><b class="${v == null ? 'font-semibold text-slate-400' : 'text-navy-950'}">${v == null ? 'Belum diuji' : v + '%'}</b></div><div class="mt-1.5">${bar(v || 0, 'bg-emerald-500')}</div></div>`; }).join('')}</div>
+    <p class="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-500">ID sesi <span class="font-mono text-navy-900">${a.session}</span>. Hasil asesmen tidak bisa diubah oleh talenta dan dikalibrasi ulang dengan rating proyek nyata.</p>
+    <div class="mt-5 flex justify-end"><button class="${btn('pri')}" onclick="closeModal();invite('${c.id}')">${ic('send','h-4 w-4')} Undang ke proyek</button></div>`, 'Hasil asesmen ' + c.name);
+}
+
+function invite(id) {
+  const c = CANDS.find(x => x.id === id);
+  const title = D.desc.trim().split(/[.!?]/)[0].slice(0, 70) || 'Proyek baru';
+  const lab = t => `<span class="mb-1.5 block text-sm font-semibold text-navy-900">${t}</span>`;
+  openModal(`<h2 class="pr-8 text-lg font-bold text-navy-950">Undang ${esc(first(c.name))} ke proyek</h2><p class="mt-1 text-sm text-slate-500">Atur kontraknya, lalu kirim. Dana baru ditahan setelah talenta menerima.</p>
+    <label class="mt-5 block">${lab('Judul proyek')}<input id="invTitle" class="${INP}" value="${esc(title)}"></label>
+    <div class="mt-4 grid grid-cols-2 gap-3">
+      <label class="block">${lab('DP untuk talenta')}<select id="invDp" class="${INP}" onchange="invUpd()">${[20, 30, 50].map(p => `<option value="${p}" ${p === 30 ? 'selected' : ''}>${p}%</option>`).join('')}</select></label>
+      <label class="block">${lab('Kuota revisi')}<select id="invRev" class="${INP}">${[0, 1, 2, 3, 4, 5].map(n => `<option value="${n}" ${n === 2 ? 'selected' : ''}>${n ? n + ' kali' : 'Tanpa revisi'}</option>`).join('')}</select></label>
+    </div>
+    <dl class="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm">
+      <div class="flex justify-between px-4 py-2.5"><dt class="text-slate-600">Honor total</dt><dd class="font-bold tabular-nums text-navy-950">${rp(D.budget)}</dd></div>
+      <div class="flex justify-between px-4 py-2.5"><dt class="text-slate-600">DP langsung cair ke talenta</dt><dd id="invDpAmt" class="font-bold tabular-nums text-emerald-700"></dd></div>
+      <div class="flex justify-between px-4 py-2.5"><dt class="text-slate-600">Ditahan sampai hasil diterima</dt><dd id="invRest" class="font-bold tabular-nums text-navy-950"></dd></div>
+      <div class="flex justify-between px-4 py-2.5"><dt class="text-slate-600">Tenggat</dt><dd class="font-bold tabular-nums text-navy-950">${D.days} hari</dd></div>
+    </dl>
+    ${c.rate > D.budget ? `<p class="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800"><span class="shrink-0 text-amber-600">${ic('alert','h-4 w-4')}</span>Tarif minimum ${esc(first(c.name))} ${rp(c.rate)}, di atas budget. Undangan tetap bisa dikirim dan talenta boleh menolak.</p>` : ''}
+    <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button class="${btn('ghost')}" onclick="closeModal()">Batal</button><button class="${btn('acc')}" onclick="sendInvite('${c.id}')">${ic('send','h-4 w-4')} Kirim undangan</button></div>`, 'Undang talenta');
+  invUpd();
+}
+const dpOf = pct => Math.round(D.budget * pct / 100 / 1000) * 1000;
+function invUpd() { const dp = dpOf(+$('#invDp').value); $('#invDpAmt').textContent = rp(dp); $('#invRest').textContent = rp(D.budget - dp); }
+
+/* =====================================================================
+   11a. DASHBOARD TALENTA: status profil, undangan masuk, pendapatan
+   ===================================================================== */
+function viewTalent() {
+  const me = CANDS.find(c => c.isYou);
+  const head = `<div>${eyebrow('Untuk pencari kerja')}<h1 class="mt-1 text-3xl font-extrabold tracking-tight text-navy-950 sm:text-4xl">Dashboard Talenta</h1><p class="mt-2 max-w-2xl text-slate-600">Status profil, undangan proyek, dan pendapatanmu di Rintisa.</p></div>`;
+  if (!me) return `<div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">${head}<div class="mt-8 grid place-items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center"><span class="grid h-12 w-12 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic('shieldCheck')}</span><h2 class="mt-5 text-lg font-bold text-navy-950">Profilmu belum aktif</h2><p class="mt-1 max-w-sm text-sm text-slate-500">Ikuti asesmen AI dulu. Setelah lolos, profilmu muncul di hasil pencarian klien dan undangan masuk ke halaman ini.</p><button class="${btn('acc')} mt-5" onclick="nav('onboarding')">Ikuti asesmen ${ic('arrowR','h-4 w-4')}</button></div></div>`;
+  const a = me.assessment, mine = !!P && P.talentId === me.id;
+  const paid = mine && P.status !== 'invited' && P.status !== 'escrow', fin = mine && P.status === 'done';
+  const earned = (paid ? P.dp : 0) + (fin ? P.fee - P.dp : 0);
+  const stat = (l, v, i) => `<div class="${CARD} flex items-center gap-4 p-4"><span class="grid h-11 w-11 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic(i)}</span><div><p class="text-xs font-semibold text-slate-500">${l}</p><p class="text-2xl font-extrabold tabular-nums text-navy-950">${v}</p></div></div>`;
+  const weak = Object.entries(a.comps).filter(([, v]) => v < 100).sort((x, y) => x[1] - y[1]);
+  const inv = mine
+    ? `<div class="rounded-2xl border ${P.status === 'invited' ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'} bg-white p-5 shadow-soft">
+        <div class="flex flex-wrap items-start justify-between gap-3"><div class="min-w-0"><p class="text-xs font-semibold uppercase tracking-wider text-slate-500">${P.status === 'invited' ? 'Undangan baru' : 'Proyek berjalan'}</p><h3 class="mt-1 text-lg font-bold text-navy-950">${esc(P.title)}</h3></div><span class="rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ${P_STATUS[P.status][1]}">${P_STATUS[P.status][0]}</span></div>
+        <dl class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">${[['Honor', rp(P.fee)], [`DP (${P.dpPct}%)`, rp(P.dp)], ['Tenggat', P.days + ' hari'], ['Revisi', P.maxRev ? P.maxRev + ' kali' : 'Tanpa revisi']].map(([l, v]) => `<div class="rounded-xl bg-slate-50 p-3"><dt class="text-xs text-slate-500">${l}</dt><dd class="mt-0.5 text-sm font-bold text-navy-950">${v}</dd></div>`).join('')}</dl>
+        <button class="${btn(P.status === 'invited' ? 'acc' : 'pri')} mt-5" onclick="P.view='talent';nav('proyek')">${P.status === 'invited' ? 'Lihat undangan' : 'Buka Ruang Proyek'} ${ic('arrowR','h-4 w-4')}</button></div>`
+    : `<div class="grid place-items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-12 text-center"><span class="grid h-11 w-11 place-items-center rounded-xl bg-slate-100 text-slate-500">${ic('send')}</span><p class="mt-4 font-bold text-navy-950">Belum ada undangan</p><p class="mt-1 max-w-sm text-sm text-slate-500">Undangan muncul di sini saat klien memilihmu dari hasil Smart Matching.${P ? ' Proyek demo yang sedang berjalan memakai talenta lain.' : ''}</p><button class="${btn('out','sm')} mt-4" onclick="seeMe()">Lihat posisiku di Dashboard Klien</button></div>`;
+  return `<div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">${head}
+    <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">${stat('Skor asesmen', a.score, 'shieldCheck')}${stat('Proyek selesai', me.projects, 'clipboard')}${stat('Diterima dari escrow', rp(earned), 'wallet')}</div>
+    <div class="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
+      <section class="min-w-0"><h2 class="text-lg font-bold text-navy-950">Undangan & proyek</h2><div class="mt-4">${inv}</div>
+        <div class="${CARD} mt-6 p-6"><h2 class="font-bold text-navy-950">Yang bisa ditingkatkan</h2>
+          ${weak.length ? `<p class="mt-1 text-sm text-slate-500">Kompetensi dengan skor terendah di asesmen terakhirmu.</p><div class="mt-4 space-y-3">${weak.map(([k, v]) => `<div><div class="flex justify-between text-sm"><span class="font-semibold text-navy-900">${k}</span><span class="font-bold tabular-nums text-navy-950">${v}%</span></div><div class="mt-1.5">${bar(v, v >= 50 ? 'bg-sky-600' : 'bg-amber-500')}</div></div>`).join('')}</div>` : '<p class="mt-1 text-sm text-slate-500">Semua kompetensi yang diuji terjawab benar. Asesmen ulang di level lebih tinggi tersedia setelah 7 hari.</p>'}</div>
+      </section>
+      <aside><div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Profil aktif</h3><p class="mt-1 text-xs text-slate-500">Begini profilmu terlihat oleh klien.</p>${miniProfile(me)}</div></aside>
+    </div></div>`;
+}
+
+/* =====================================================================
+   11b. RUANG PROYEK: undangan → escrow → progres → revisi → selesai
+   Satu pengguna demo memerankan dua sisi lewat tombol "Tampilan".
+   [PRODUKSI] status proyek, saldo escrow, dan kuota revisi dikelola backend.
+   ===================================================================== */
+let P = null;
+const LSP = 'rintisa.v3.project';
+try { const sp = JSON.parse(localStorage.getItem(LSP) || 'null'); if (sp && sp.talentId && CANDS.some(c => c.id === sp.talentId)) P = sp; } catch (e) {}
+function saveP() { try { if (P) localStorage.setItem(LSP, JSON.stringify(P)); else localStorage.removeItem(LSP); } catch (e) {} }
+const P_STATUS = { invited:['Menunggu talenta','bg-amber-50 text-amber-800 ring-amber-200'], escrow:['Menunggu pembayaran','bg-amber-50 text-amber-800 ring-amber-200'],
+  working:['Dikerjakan','bg-sky-50 text-sky-700 ring-sky-200'], submitted:['Menunggu persetujuan klien','bg-sky-50 text-sky-700 ring-sky-200'], done:['Selesai','bg-emerald-50 text-emerald-700 ring-emerald-200'] };
+const P_ACTOR = { invited:'talent', escrow:'client', working:'talent', submitted:'client', done:'client' };
+const P_NEXT = { invited:'Talenta perlu menerima undangan.', escrow:'Klien perlu membayar ke escrow.', working:'Talenta mengirim update progres.', submitted:'Klien meninjau hasil: terima, atau klaim revisi.', done:'Klien bisa memberi rating.' };
+const pSay = (from, t) => P.chat.push({ from, t });
+const pTalent = () => CANDS.find(x => x.id === P.talentId) || { name:'Talenta', track:'frontend', city:'', av:0, assessment:{ score:0, level:'' } };
+
+function sendInvite(id) {
+  const c = CANDS.find(x => x.id === id);
+  const title = ($('#invTitle')?.value || '').trim() || 'Proyek baru';
+  const dpPct = +($('#invDp')?.value || 30), rv = $('#invRev'), dp = dpOf(dpPct);
+  P = { talentId:id, title, fee:D.budget, dp, dpPct, days:D.days, maxRev:rv ? +rv.value : 2, revUsed:0, revOpen:null, prog:0, day:0, log:[], status:'invited', view:'talent', rating:0, report:null,
+        chat:[{ from:'sys', t:`Klien mengirim undangan proyek ke ${c.name}.` }] };
+  closeModal(); nav('proyek'); toast('Undangan terkirim. Sekarang lihat dari sisi talenta.');
+}
+function pView(v) { P.view = v; render(); }
+function pAccept() { P.status = 'escrow'; P.view = 'client'; pSay('sys', 'Talenta menerima undangan. Menunggu klien membayar ke escrow.'); render(); toast('Undangan diterima.'); }
+function pDecline() { P = null; nav('dashboard'); toast('Undangan ditolak. Klien bisa mengundang kandidat lain.'); }
+function pPay() { P.status = 'working'; P.view = 'talent'; pSay('sys', `Dana ${rp(P.fee)} ditahan di escrow. DP ${rp(P.dp)} cair ke talenta.`); render(); toast('Dana masuk escrow. DP cair ke talenta.'); }
+function pUpdate() {
+  const p = +$('#pRange').value, n = $('#pNote').value.trim();
+  if (p < P.prog) return toast('Progres tidak bisa lebih kecil dari update sebelumnya.');
+  P.log.unshift({ p, n, d:P.day }); P.prog = p;
+  if (p === 100 && !P.revOpen) { P.status = 'submitted'; P.view = 'client'; pSay('sys', 'Talenta mengirim hasil akhir.'); }
+  render(); toast(p === 100 ? 'Hasil akhir terkirim ke klien.' : 'Progres diperbarui.');
+}
+function pClaimRev() {
+  const n = $('#pRev').value.trim(); if (!n) return toast('Tulis apa yang perlu direvisi.');
+  P.revUsed++; P.revOpen = n; P.status = 'working'; P.view = 'talent';
+  pSay('sys', `Revisi ke-${P.revUsed} dari ${P.maxRev} diajukan: ${n}`); render(); toast('Revisi diajukan.');
+}
+function pRevDone() { P.revOpen = null; P.status = P.prog === 100 ? 'submitted' : 'working'; if (P.status === 'submitted') P.view = 'client'; pSay('sys', 'Talenta menandai revisi selesai.'); render(); }
+function pAcceptResult() { P.status = 'done'; pSay('sys', `Hasil diterima. Sisa dana ${rp(P.fee - P.dp)} cair ke talenta.`); render(); toast('Proyek selesai. Sisa dana cair ke talenta.'); }
+function pRate(n) {
+  if (P.rating) return; P.rating = n;
+  const c = CANDS.find(x => x.id === P.talentId);
+  if (c) { const onTime = P.day <= P.days ? 100 : 0; c.onTime = c.projects ? Math.round((c.onTime * c.projects + onTime) / (c.projects + 1)) : onTime; c.projects++; }
+  pSay('sys', `Klien memberi rating ${n} dari 5.`); render(); toast('Rating tersimpan dan masuk ke reliabilitas talenta.');
+}
+function pSend() { const v = $('#pMsg').value.trim(); if (!v) return; pSay(P.view, v); render(); $('#pMsg')?.focus(); }
+
+const P_REASONS = { client:['Hasil jauh di bawah level asesmen', 'Talenta tidak merespons', 'Melewati tenggat tanpa kabar', 'Lainnya'],
+  talent:['Klien meminta pekerjaan di luar kontrak', 'Klien tidak merespons', 'Klien meminta revisi di luar kuota', 'Lainnya'] };
+function pReport() {
+  const cl = P.view === 'client';
+  openModal(`<h2 class="pr-8 text-lg font-bold text-navy-950">Laporkan ${cl ? 'talenta' : 'klien'}</h2><p class="mt-1 text-sm text-slate-500">Laporan ditinjau admin. Selama ditinjau, dana di escrow tetap ditahan.</p>
+    <label class="mt-5 block"><span class="mb-1.5 block text-sm font-semibold text-navy-900">Alasan</span><select id="repReason" class="${INP}">${P_REASONS[P.view].map(r => `<option>${r}</option>`).join('')}</select></label>
+    <label class="mt-4 block"><span class="mb-1.5 block text-sm font-semibold text-navy-900">Jelaskan masalahnya</span><textarea id="repNote" rows="3" class="${INP}" placeholder="Ceritakan apa yang terjadi dan kapan"></textarea></label>
+    <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button class="${btn('ghost')}" onclick="closeModal()">Batal</button><button class="${btn('pri')}" onclick="pReportSend()">${ic('alert','h-4 w-4')} Kirim laporan</button></div>`, 'Laporkan');
+}
+function pReportSend() {
+  const note = $('#repNote').value.trim(); if (!note) return toast('Jelaskan masalahnya dulu.');
+  P.report = { by:P.view, reason:$('#repReason').value, note, day:P.day, resolved:false };
+  pSay('sys', `${P.view === 'client' ? 'Klien' : 'Talenta'} mengirim laporan: ${P.report.reason}. Admin sedang meninjau.`);
+  closeModal(); render(); toast('Laporan terkirim ke admin.');
+}
+function pReportResolve() { P.report.resolved = true; pSay('sys', 'Admin selesai meninjau laporan. Proyek dilanjutkan.'); render(); toast('Laporan ditutup oleh admin.'); }
+
+function viewProject() {
+  if (!P) return `<div class="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6"><span class="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic('clipboard')}</span><h1 class="mt-5 text-2xl font-extrabold text-navy-950">Belum ada proyek berjalan</h1><p class="mt-2 text-slate-600">Ruang proyek terbuka setelah klien mengundang kandidat dari Dashboard Klien.</p><button class="${btn('pri')} mt-6" onclick="nav('dashboard')">Buka Dashboard Klien ${ic('arrowR','h-4 w-4')}</button></div>`;
+  const c = pTalent(), cl = P.view === 'client', st = P.status, rest = P.fee - P.dp, fin = st === 'done';
+  const paid = st !== 'invited' && st !== 'escrow', run = st === 'working' || st === 'submitted', over = P.day > P.days, left = P.maxRev - P.revUsed;
+  const repOpen = !!P.report && !P.report.resolved;
+  const stepNow = { invited:1, escrow:2, working:3, submitted:3, done:5 }[st];
+  const steps = ['Undangan', 'Escrow', 'Pengerjaan', 'Selesai'].map((s, i) => { const n = i + 1, done = n < stepNow, on = n === stepNow;
+    return `<li class="flex ${n < 4 ? 'flex-1' : ''} items-center gap-2"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${done ? 'bg-emerald-600 text-white' : on ? 'bg-navy-900 text-white' : 'bg-slate-200 text-slate-500'}">${done ? ic('check','h-3.5 w-3.5') : n}</span><span class="hidden whitespace-nowrap text-sm font-semibold sm:block ${on ? 'text-navy-900' : 'text-slate-500'}">${s}</span>${n < 4 ? `<span class="h-px flex-1 ${done ? 'bg-emerald-300' : 'bg-slate-200'}"></span>` : ''}</li>`; }).join('');
+  const tile = (l, v, strong) => `<div class="rounded-xl ${strong ? 'bg-navy-900 text-white' : 'bg-slate-50'} p-3"><p class="text-xs ${strong ? 'text-slate-300' : 'text-slate-500'}">${l}</p><p class="mt-0.5 text-lg font-extrabold tabular-nums ${strong ? '' : 'text-navy-950'}">${v}</p></div>`;
+  const wait = t => `<div class="${CARD} flex items-center gap-3 p-5"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500">${ic('clock')}</span><p class="text-sm text-slate-600">${t}</p></div>`;
+  const kontrak = [['Honor total', rp(P.fee)], [`DP ke talenta (${P.dpPct}%)`, rp(P.dp)], ['Sisa setelah hasil diterima', rp(rest)], ['Tenggat', P.days + ' hari'], ['Kuota revisi', P.maxRev ? P.maxRev + ' kali' : 'Tanpa revisi']];
+  let main = '';
+
+  if (st === 'invited') main = cl ? wait(`Undangan sudah dikirim ke ${esc(first(c.name))}. Dana belum ditahan sampai talenta menerima.`)
+    : `<div class="${CARD} p-6"><h2 class="text-lg font-bold text-navy-950">Undangan proyek untukmu</h2><p class="mt-1 text-sm text-slate-600">Klien memilihmu dari hasil Smart Matching. Baca draf kontrak di samping, lalu terima atau tolak.</p>
+        <ul class="mt-4 space-y-2 text-sm text-slate-600">${[`DP ${P.dpPct}% cair begitu klien membayar ke escrow, sebagai modal kerja.`, 'Sisa honor ditahan Rintisa dan cair setelah hasil diterima.', P.maxRev ? `Revisi dibatasi ${P.maxRev} kali sesuai kontrak.` : 'Kontrak ini tanpa revisi.'].map(checkLi).join('')}</ul>
+        <div class="mt-6 flex flex-col gap-2 sm:flex-row"><button class="${btn('acc')}" onclick="pAccept()">${ic('check','h-4 w-4')} Terima undangan</button><button class="${btn('out')}" onclick="pDecline()">Tolak</button></div></div>`;
+
+  if (st === 'escrow') main = cl ? `<div class="${CARD} p-6"><div class="flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-navy-50 text-navy-700">${ic('lock')}</span><h2 class="text-lg font-bold text-navy-950">Bayar ke escrow</h2></div>
+        <p class="mt-3 text-sm text-slate-600">Seluruh honor ${rp(P.fee)} ditahan Rintisa. DP ${rp(P.dp)} langsung cair ke talenta, dan sisanya ${rp(rest)} baru cair setelah kamu menerima hasil.</p>
+        <button class="${btn('acc')} mt-5" onclick="pPay()">${ic('wallet','h-4 w-4')} Bayar ${rp(P.fee)} ke escrow</button><p class="mt-2 text-xs text-slate-500">Simulasi: tidak ada uang yang benar-benar berpindah.</p></div>`
+    : wait('Undangan sudah kamu terima. Menunggu klien membayar ke escrow sebelum pekerjaan dimulai.');
+
+  if (run || fin) {
+    main = `<div class="${CARD} p-6"><div class="flex items-center justify-between gap-3"><h2 class="text-lg font-bold text-navy-950">Progres pekerjaan</h2>${fin ? '' : `<button class="${btn('ghost','sm')}" onclick="P.day++;render()">${ic('clock','h-4 w-4')} Simulasi: maju 1 hari</button>`}</div>
+        <p class="mt-4 text-xs font-semibold text-slate-500">Waktu: hari ke-${P.day} dari ${P.days}${over ? ' <span class="text-rose-600">(lewat tenggat)</span>' : ''}</p><div class="mt-1.5">${bar(P.day / P.days * 100, over ? 'bg-rose-500' : 'bg-amber-400')}</div>
+        <p class="mt-4 text-xs font-semibold text-slate-500">Pekerjaan: ${P.prog}% selesai</p><div class="mt-1.5">${bar(P.prog, 'bg-emerald-500')}</div>
+        ${P.log.length ? `<ol class="mt-5 space-y-3 border-l-2 border-slate-200 pl-4">${P.log.map(l => `<li class="text-sm"><b class="text-navy-950">${l.p}%</b> <span class="text-xs text-slate-500">· hari ke-${l.d}</span><br><span class="text-slate-600">${esc(l.n || 'Tanpa catatan')}</span></li>`).join('')}</ol>` : '<p class="mt-5 text-sm text-slate-500">Belum ada update dari talenta.</p>'}</div>`;
+
+    if (!cl && st === 'working') main += `<div class="${CARD} mt-4 p-6"><h2 class="text-lg font-bold text-navy-950">Kirim update</h2>
+        ${P.revOpen ? `<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Revisi ke-${P.revUsed}:</b> ${esc(P.revOpen)}<br><button class="${btn('acc','sm')} mt-3" onclick="pRevDone()">${ic('check','h-4 w-4')} Tandai revisi selesai</button></div>` : ''}
+        <label class="mt-4 block"><span class="flex justify-between text-sm font-semibold text-navy-900">Persentase selesai <output id="pOut" class="tabular-nums">${P.prog}%</output></span><input id="pRange" type="range" min="0" max="100" step="5" value="${P.prog}" class="mt-2 w-full accent-emerald-600" oninput="$('#pOut').textContent=this.value+'%'"></label>
+        <label class="mt-4 block"><span class="mb-1.5 block text-sm font-semibold text-navy-900">Catatan</span><input id="pNote" class="${INP}" placeholder="Contoh: halaman menu selesai, lanjut tombol WhatsApp"></label>
+        <button class="${btn('pri')} mt-4" onclick="pUpdate()">${ic('send','h-4 w-4')} Kirim update</button><p class="mt-2 text-xs text-slate-500">Update 100% dikirim sebagai hasil akhir.</p></div>`;
+    if (!cl && st === 'submitted') main += `<div class="mt-4">${wait('Hasil akhir sudah dikirim. Menunggu klien menerima hasil atau mengklaim revisi.')}</div>`;
+
+    const can = cl && !fin && left > 0 && P.prog > 0 && !P.revOpen;
+    main += `<div class="${CARD} mt-4 p-6"><h2 class="text-lg font-bold text-navy-950">Revisi</h2>
+        <div class="mt-3 flex items-center gap-2" role="img" aria-label="Revisi terpakai ${P.revUsed} dari ${P.maxRev}">${Array.from({ length:P.maxRev }, (_, i) => `<span class="grid h-7 w-7 place-items-center rounded-full border-2 border-navy-900 ${i < P.revUsed ? 'bg-navy-900 text-white' : ''}">${i < P.revUsed ? ic('check','h-3.5 w-3.5') : ''}</span>`).join('')}<span class="ml-1 text-sm text-slate-600">Terpakai ${P.revUsed} dari ${P.maxRev} sesuai kontrak</span></div>
+        ${cl && !fin ? `<textarea id="pRev" rows="2" class="${INP} mt-4" placeholder="Apa yang perlu direvisi?" ${can ? '' : 'disabled'}></textarea>
+          <button class="${btn('out','sm')} mt-3" ${can ? '' : 'disabled'} onclick="pClaimRev()">${ic('refresh','h-4 w-4')} Klaim revisi</button>
+          <p class="mt-2 text-xs text-slate-500">${!P.maxRev ? 'Kontrak ini tanpa revisi.' : left <= 0 ? `${ic('lock','inline h-3.5 w-3.5')} Kuota habis, tombol revisi terkunci otomatis.` : P.revOpen ? 'Menunggu talenta menyelesaikan revisi sebelumnya.' : !P.prog ? 'Revisi bisa diklaim setelah ada progres.' : `Sisa kuota: ${left} kali.`}</p>` : ''}</div>`;
+
+    if (cl && !fin) main += `<div class="${CARD} mt-4 p-6"><h2 class="text-lg font-bold text-navy-950">Terima hasil</h2><p class="mt-1 text-sm text-slate-600">Sisa dana ${rp(rest)} cair ke talenta setelah hasil diterima.</p>
+        <button class="${btn('acc')} mt-4" ${st === 'submitted' && !P.revOpen && !repOpen ? '' : 'disabled'} onclick="pAcceptResult()">${ic('check','h-4 w-4')} Terima hasil & cairkan sisa dana</button>
+        ${repOpen ? '<p class="mt-2 text-xs text-amber-700">Pencairan dikunci selama laporan ditinjau admin.</p>' : st === 'submitted' ? '' : '<p class="mt-2 text-xs text-slate-500">Tombol aktif setelah talenta mengirim hasil akhir (100%) dan tidak ada revisi yang menggantung.</p>'}</div>`;
+
+    if (fin) main = `<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-6"><div class="flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-600 text-white">${ic('shieldCheck')}</span><div><h2 class="text-lg font-bold text-navy-950">Proyek selesai</h2><p class="text-sm text-slate-600">Seluruh honor ${rp(P.fee)} sudah cair ke talenta${over ? ', dengan catatan melewati tenggat' : ''}.</p></div></div>
+        ${cl ? `<p class="mt-5 text-sm font-semibold text-navy-900">${P.rating ? 'Rating kamu' : 'Beri rating untuk ' + esc(first(c.name))}</p><div class="mt-2 flex gap-1">${[1,2,3,4,5].map(n => `<button onclick="pRate(${n})" aria-label="${n} bintang" ${P.rating ? 'disabled' : ''} class="grid h-10 w-10 place-items-center rounded-lg text-2xl transition ${n <= P.rating ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}">★</button>`).join('')}</div><p class="mt-2 text-xs text-slate-500">Rating dan ketepatan waktu masuk ke faktor reliabilitas talenta di Match Score.</p>`
+              : `<p class="mt-4 text-sm text-slate-600">${P.rating ? `Klien memberi rating ${P.rating} dari 5.` : 'Menunggu rating dari klien.'} Proyek ini tercatat sebagai pengalaman terverifikasi pertamamu.</p>`}</div><div class="mt-4">` + main + '</div>';
+  }
+
+  return `<div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+    <div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+      <div class="min-w-0">${eyebrow('Ruang proyek')}<h1 class="mt-1 text-3xl font-extrabold tracking-tight text-navy-950">${esc(P.title)}</h1>
+        <p class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600"><span class="rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ${P_STATUS[st][1]}">${P_STATUS[st][0]}</span><span>Talenta: <b class="text-navy-900">${esc(c.name)}</b></span></p></div>
+      <div><p class="mb-1.5 text-xs font-semibold text-slate-500 md:text-right">Tampilan</p><div class="inline-flex rounded-xl bg-white p-1 shadow-soft ring-1 ring-slate-200" role="tablist" aria-label="Pilih peran">${[['client','Klien'],['talent','Talenta']].map(([k, l]) => `<button role="tab" aria-selected="${P.view === k}" onclick="pView('${k}')" class="rounded-lg px-4 py-2 text-sm font-semibold transition ${P.view === k ? 'bg-navy-900 text-white shadow-sm' : 'text-slate-600 hover:text-navy-900'}">${l}</button>`).join('')}</div></div>
+    </div>
+    <div class="${CARD} mt-6 p-4"><ol class="flex items-center gap-2 sm:gap-3">${steps}</ol></div>
+    ${P_ACTOR[st] !== P.view && !(st === 'done' && P.rating) ? `<div class="mt-4 flex flex-col items-start justify-between gap-3 rounded-2xl border border-navy-100 bg-navy-50/70 p-4 sm:flex-row sm:items-center"><p class="text-sm text-navy-900"><b>Langkah berikutnya:</b> ${P_NEXT[st]}</p><button class="${btn('pri','sm')}" onclick="pView('${P_ACTOR[st]}')">Beralih ke tampilan ${P_ACTOR[st] === 'client' ? 'Klien' : 'Talenta'} ${ic('arrowR','h-4 w-4')}</button></div>` : ''}
+    ${P.report ? (repOpen ? `<div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><div class="flex gap-3"><span class="shrink-0 text-amber-600">${ic('alert')}</span><div class="min-w-0 flex-1"><p class="font-bold text-amber-900">Laporan sedang ditinjau admin</p><p class="mt-1 text-sm text-amber-800">Dari ${P.report.by === 'client' ? 'klien' : 'talenta'} pada hari ke-${P.report.day}: <b>${esc(P.report.reason)}</b>. ${esc(P.report.note)}</p><p class="mt-1 text-sm text-amber-800">Dana di escrow tetap ditahan sampai ada keputusan.</p><button class="${btn('out','sm')} mt-3" onclick="pReportResolve()">Simulasi: admin menutup laporan</button></div></div></div>` : `<p class="mt-4 flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm text-slate-600">${ic('check','h-4 w-4 text-emerald-600')} Laporan "${esc(P.report.reason)}" sudah ditinjau dan ditutup admin.</p>`) : ''}
+    <div class="mt-6 grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div class="min-w-0">${main}</div>
+      <aside class="space-y-4">
+        <div class="${CARD} p-5"><h3 class="flex items-center gap-2 text-sm font-bold text-navy-950">${ic('lock','h-4 w-4')} Escrow</h3>
+          <div class="mt-3 grid gap-2">${tile('Ditahan Rintisa', rp(paid && !fin ? rest : 0), true)}${tile('DP cair ke talenta', rp(paid ? P.dp : 0))}${tile('Sisa cair ke talenta', rp(fin ? rest : 0))}</div>
+          <p class="mt-3 text-xs text-slate-500">${!paid ? 'Dana belum dibayar ke escrow.' : fin ? 'Semua dana sudah dicairkan.' : 'Sisa dana aman sampai hasil diterima klien.'}</p></div>
+        <div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Kontrak</h3><dl class="mt-3 divide-y divide-slate-100 text-sm">${kontrak.map(([l, v]) => `<div class="flex justify-between py-2"><dt class="text-slate-600">${l}</dt><dd class="font-bold tabular-nums text-navy-950">${v}</dd></div>`).join('')}</dl></div>
+        <div class="${CARD} p-5"><h3 class="flex items-center gap-2 text-sm font-bold text-navy-950">${ic('chat','h-4 w-4')} Chat proyek</h3>
+          <div id="pChat" class="mt-3 flex max-h-64 flex-col gap-2 overflow-y-auto">${P.chat.map(m => m.from === 'sys' ? `<p class="px-2 text-center text-xs text-slate-500">${esc(m.t)}</p>` : `<p class="max-w-[85%] rounded-2xl px-3 py-2 text-sm ${m.from === P.view ? 'self-end bg-navy-900 text-white' : 'self-start bg-slate-100 text-slate-700'}">${esc(m.t)}</p>`).join('')}</div>
+          <div class="mt-3 flex gap-2"><input id="pMsg" class="${INP}" placeholder="Tulis pesan sebagai ${cl ? 'klien' : 'talenta'}" onkeydown="if(event.key==='Enter')pSend()"><button class="${btn('pri','sm')}" onclick="pSend()" aria-label="Kirim pesan">${ic('send','h-4 w-4')}</button></div></div>
+        ${st !== 'invited' ? `<div class="${CARD} p-5"><h3 class="text-sm font-bold text-navy-950">Ada masalah?</h3><p class="mt-1 text-xs text-slate-500">Laporkan ke admin jika pihak lain melanggar kontrak. Dana ditahan selama laporan ditinjau.</p><button class="${btn('out','sm')} mt-3 w-full" ${P.report ? 'disabled' : ''} onclick="pReport()">${ic('alert','h-4 w-4')} ${P.report ? 'Laporan sudah dikirim' : 'Laporkan ' + (cl ? 'talenta' : 'klien')}</button></div>` : ''}
+      </aside>
+    </div>
+  </div>`;
+}
+
+/* ---------- 12. Global ---------- */
+function resetDemo() {
+  try { localStorage.removeItem(LS); } catch (e) {}
+  stopTimer(); clearTimeout(T.match);
+  CANDS = BASE.map(c => ({ ...c })); Object.assign(A, freshA()); Object.assign(D, freshD()); P = null;
+  if (route() === 'proyek' || route() === 'talenta') location.hash = '#/dashboard';
+  render(); toast('Demo direset ke kondisi awal.');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#modal').innerHTML) { closeModal(); return; }
+  if ($('#modal').innerHTML || route() !== 'onboarding' || A.step !== 3 || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  const m = { '1':0, '2':1, '3':2, '4':3, a:0, b:1, c:2, d:3 }[e.key.toLowerCase()];
+  if (m != null) { A.sel = A.order[m]; render(); }
+  else if (e.key === 'Enter' && A.sel != null) { e.preventDefault(); submitAns(false); }
+});
+render();
+</script>
+</body>
+</html>
